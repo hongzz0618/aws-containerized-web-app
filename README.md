@@ -1,4 +1,13 @@
-# 🐳 Containerized Web App on AWS
+## 🧭 Repository Context
+
+This repository is part of a modularization effort to separate each of the **8 most common AWS architectures** into independent projects.  
+The code and resources here were **extracted from a general repository** that originally contained all 8 architectures, to improve clarity, maintainability, and reuse.
+
+🔗 [Original Repository – AWS Architectures Collection](https://github.com/hongzz0618/aws-architecture-collection)
+
+---
+
+## 🐳 Containerized Web App on AWS
 
 This project shows how to run a **containerized web application** using AWS services.  
 It uses **ECS Fargate**, **Application Load Balancer (ALB)**, and **Amazon EFS** to deploy a scalable web app with persistent shared storage — all without managing servers.
