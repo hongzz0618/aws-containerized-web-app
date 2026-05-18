@@ -127,3 +127,9 @@ Destroy the stack after testing if you do not need it running.
 Maturity: baseline learning lab.
 
 This repo is useful for discussing Fargate networking, ALB routing, and EFS trade-offs. It needs additional security, operations, and deployment controls before it should be treated as a production architecture.
+
+## Related Reference Hub
+
+This project is part of my AWS Backend Architecture Lab, a reference hub for backend-focused AWS architecture patterns, infrastructure-as-code practice, and engineering trade-offs.
+
+[AWS Architecture Labs](https://github.com/hongzz0618/aws-architecture-labs)
