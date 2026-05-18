@@ -1,8 +1,14 @@
-# AWS Containerized Web App Learning Lab
+# AWS Containerized Web App
 
-This repository is an ECS Fargate learning lab for running a small containerized web application behind an Application Load Balancer. It shows how VPC networking, public/private subnets, Fargate tasks, ALB routing, and EFS shared storage can be assembled with Terraform.
+This repository is a compact reference project for running a containerized web application on AWS using ECS Fargate, an Application Load Balancer, private subnets, and EFS shared storage.
 
 The configuration is intentionally compact so the infrastructure relationships are easy to inspect. It is a baseline deployment, not a complete container platform.
+
+## Use Case
+
+This project represents a small web application or internal service that runs as a container behind a load balancer while keeping ECS tasks in private subnets.
+
+Realistic examples include a simple backend web service, admin tool, or content-serving application where the ALB handles public HTTP routing and EFS provides shared file storage across task replacements.
 
 ## What This Lab Demonstrates
 
@@ -18,6 +24,13 @@ The configuration is intentionally compact so the infrastructure relationships a
 ![Containerized Web App Diagram](diagram/containerized-web-app.png)
 
 The Terraform configuration creates a VPC with public and private subnets, an internet-facing ALB, an ECS Fargate service, and an EFS file system mounted into the task. The ALB listens on HTTP port 80 and forwards requests to the Fargate task.
+
+Runtime request flow:
+
+- A user request reaches the public ALB.
+- The ALB forwards the request to the ECS target group.
+- A Fargate task serves the application from private subnets.
+- The task can mount EFS when shared persistent files are needed.
 
 The ECS service uses a fixed desired count. Autoscaling is not currently implemented.
 
@@ -86,7 +99,7 @@ Review the destroy plan before confirming. EFS, load balancers, NAT gateways, an
 
 ## Security Notes
 
-- The ALB listener is public HTTP on port 80 for learning/demo purposes. Production use should add HTTPS with ACM, redirect HTTP to HTTPS, and review security controls.
+- The ALB listener is public HTTP on port 80 for learning/demo purposes. Real deployments should add HTTPS with ACM, redirect HTTP to HTTPS, and review security controls.
 - ECS task ingress is limited to the ALB security group.
 - EFS NFS ingress is limited to the ECS task security group.
 - Outbound egress is broad in the demo security groups.
@@ -112,24 +125,32 @@ Destroy the stack after testing if you do not need it running.
 - The task definition uses a simple container image input and a bootstrap container to seed basic content.
 - No CI/CD workflow is included.
 - Observability is minimal.
-- IAM and security group rules should be reviewed before using this pattern outside a demo account.
+- IAM and security group rules should be reviewed before using this pattern outside a learning or sandbox account.
+
+## Architecture Trade-offs
+
+- ECS Fargate reduces compute management compared with self-managed container hosts, but gives less control over the underlying runtime environment.
+- A public ALB with private ECS tasks keeps task networking private while still exposing HTTP entry points.
+- EFS supports shared persistent files across task replacements, but stateless containers are simpler to scale and operate.
+- A NAT gateway simplifies private subnet outbound access, but it adds standing cost.
+- The compact Terraform structure is easier to inspect, but it does not include the controls expected from a complete container platform.
 
 ## Next Improvements
 
-- Add HTTPS listener support with ACM.
-- Add ECS service autoscaling policies.
 - Add CloudWatch log configuration for containers.
+- Add HTTPS listener support with ACM.
 - Add health check tuning and deployment circuit breaker settings.
+- Add ECS service autoscaling policies.
 - Add a validation workflow for Terraform formatting and validation.
 
 ## Project Maturity
 
-Maturity: baseline learning lab.
+Maturity: Basic / baseline reference project.
 
-This repo is useful for discussing Fargate networking, ALB routing, and EFS trade-offs. It needs additional security, operations, and deployment controls before it should be treated as a production architecture.
+This repo is useful for discussing Fargate networking, ALB routing, and EFS trade-offs. It needs additional security, operational, and deployment controls before it should be adapted for real workloads.
 
 ## Related Reference Hub
 
-This project is part of my AWS Backend Architecture Lab, a reference hub for backend-focused AWS architecture patterns, infrastructure-as-code practice, and engineering trade-offs.
+This project is part of my AWS Backend Architecture Reference Hub, which connects backend-focused AWS architecture projects, infrastructure-as-code practice, and engineering trade-offs.
 
 [AWS Architecture Labs](https://github.com/hongzz0618/aws-architecture-labs)
