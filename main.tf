@@ -1,3 +1,14 @@
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
 provider "aws" {
   region = var.aws_region
 }
@@ -7,9 +18,10 @@ module "vpc" {
 }
 
 module "efs" {
-  source     = "./modules/efs"
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
+  source                = "./modules/efs"
+  vpc_id                = module.vpc.vpc_id
+  subnet_ids            = module.vpc.private_subnets
+  ecs_security_group_id = module.ecs_fargate.ecs_security_group_id
 }
 
 module "alb" {

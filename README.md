@@ -37,7 +37,7 @@ The ECS service uses a fixed desired count. Autoscaling is not currently impleme
 The Terraform configuration provisions:
 
 - VPC with public and private subnets
-- NAT gateway for private subnet outbound access
+- NAT gateway for private subnet outbound access, which creates standing hourly cost while deployed
 - Application Load Balancer and target group
 - ECS cluster, task definition, and service
 - EFS file system, mount targets, and access point
@@ -86,9 +86,9 @@ Review the destroy plan before confirming. EFS, load balancers, NAT gateways, an
 
 ## Security Notes
 
-- The ALB listener is public HTTP on port 80. This is demo-only; HTTPS with ACM is a future improvement.
+- The ALB listener is public HTTP on port 80 for learning/demo purposes. Production use should add HTTPS with ACM, redirect HTTP to HTTPS, and review security controls.
 - ECS task ingress is limited to the ALB security group.
-- The EFS security group currently allows NFS from the VPC CIDR. A stronger version would allow NFS only from the ECS task security group.
+- EFS NFS ingress is limited to the ECS task security group.
 - Outbound egress is broad in the demo security groups.
 - No authentication or application-layer authorization is implemented.
 
@@ -118,7 +118,6 @@ Destroy the stack after testing if you do not need it running.
 
 - Add HTTPS listener support with ACM.
 - Add ECS service autoscaling policies.
-- Scope EFS access to the ECS task security group.
 - Add CloudWatch log configuration for containers.
 - Add health check tuning and deployment circuit breaker settings.
 - Add a validation workflow for Terraform formatting and validation.

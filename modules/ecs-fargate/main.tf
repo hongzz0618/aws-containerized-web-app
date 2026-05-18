@@ -158,3 +158,7 @@ variable "efs_access_point_id" {
 variable "alb_security_group_id" {
   type = string
 }
+
+output "ecs_security_group_id" {
+  value = aws_security_group.ecs.id
+}

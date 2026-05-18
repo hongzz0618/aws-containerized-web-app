@@ -37,10 +37,10 @@ resource "aws_security_group" "efs" {
   vpc_id = var.vpc_id
 
   ingress {
-    from_port   = 2049
-    to_port     = 2049
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [var.ecs_security_group_id]
   }
 
   egress {
@@ -57,6 +57,10 @@ variable "vpc_id" {
 
 variable "subnet_ids" {
   type = list(string)
+}
+
+variable "ecs_security_group_id" {
+  type = string
 }
 
 output "efs_id" {
