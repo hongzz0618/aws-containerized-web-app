@@ -25,10 +25,10 @@ resource "aws_security_group" "alb" {
 }
 
 resource "aws_lb_target_group" "this" {
-  name     = "fargate-tg"
-  port     = var.target_group_port
-  protocol = "HTTP"
-  vpc_id   = var.vpc_id
+  name        = "fargate-tg"
+  port        = var.target_group_port
+  protocol    = "HTTP"
+  vpc_id      = var.vpc_id
   target_type = "ip"
 }
 
@@ -64,5 +64,5 @@ output "target_group_arn" {
 }
 
 output "alb_security_group_id" {
- value = aws_security_group.alb.id
+  value = aws_security_group.alb.id
 }
