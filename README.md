@@ -1,62 +1,130 @@
-## 🧭 Repository Context
+# AWS Containerized Web App Learning Lab
 
-This repository is part of a modularization effort to separate each of the **8 most common AWS architectures** into independent projects.  
-The code and resources here were **extracted from a general repository** that originally contained all 8 architectures, to improve clarity, maintainability, and reuse.
+This repository is an ECS Fargate learning lab for running a small containerized web application behind an Application Load Balancer. It shows how VPC networking, public/private subnets, Fargate tasks, ALB routing, and EFS shared storage can be assembled with Terraform.
 
-🔗 [Original Repository – AWS Architectures Collection](https://github.com/hongzz0618/aws-architecture-collection)
+The configuration is intentionally compact so the infrastructure relationships are easy to inspect. It is a baseline deployment, not a complete container platform.
 
----
+## What This Lab Demonstrates
 
-## 🐳 Containerized Web App on AWS
+- Running a container task on AWS Fargate
+- Routing public HTTP traffic through an Application Load Balancer
+- Placing ECS tasks in private subnets
+- Mounting Amazon EFS into containers through an access point
+- Using Terraform modules to separate VPC, ALB, EFS, and ECS concerns
+- Identifying trade-offs around public access, shared storage, and network cost
 
-This project shows how to run a **containerized web application** using AWS services.  
-It uses **ECS Fargate**, **Application Load Balancer (ALB)**, and **Amazon EFS** to deploy a scalable web app with persistent shared storage — all without managing servers.
-
----
-
-## 📐 Architecture
+## Architecture Overview
 
 ![Containerized Web App Diagram](diagram/containerized-web-app.png)
-- **ECS Fargate** → Runs containers without provisioning or managing servers.
-- **Application Load Balancer (ALB)** → Routes HTTP traffic to ECS tasks.
-- **Elastic File System (EFS)** → Provides shared, persistent storage across tasks.
 
----
+The Terraform configuration creates a VPC with public and private subnets, an internet-facing ALB, an ECS Fargate service, and an EFS file system mounted into the task. The ALB listens on HTTP port 80 and forwards requests to the Fargate task.
 
-## ✅ Why This Pattern?
+The ECS service uses a fixed desired count. Autoscaling is not currently implemented.
 
-| Feature             | Benefit                                      |
-|---------------------|----------------------------------------------|
-| **Serverless containers** | No EC2 instances to manage or patch     |
-| **Scalable**         | Automatically handles traffic with ALB + ECS |
-| **Persistent storage** | EFS keeps files even if containers restart |
-| **Flexible**         | Great for CMS, web apps, or apps needing shared state |
+## AWS Services Used
 
----
+| Service | Role in this lab |
+| --- | --- |
+| Amazon VPC | Provides public and private networking |
+| Amazon ECS | Runs the container service |
+| AWS Fargate | Provides serverless container compute |
+| Elastic Load Balancing | Routes HTTP traffic to ECS tasks |
+| Amazon EFS | Provides shared persistent file storage |
+| AWS IAM | Provides ECS task execution and task roles |
 
-## 🌍 Real-World Use Cases
-- Content management systems (CMS)
-- Web apps with file uploads or shared assets
-- Multi-container apps with persistent state
-- Scalable frontend/backend services
----
+## What Terraform Creates
 
-## 📦 What’s Inside
-- Terraform code for:
-  - ECS cluster, task definition, and service
-  - ALB configuration
-  - EFS with access point mounted into containers
-- Bootstrap container that seeds a default `index.html` into EFS
-- Architecture diagram
-- Deployment scripts
+The Terraform configuration provisions:
 
----
+- VPC with public and private subnets
+- NAT gateway for private subnet outbound access
+- Application Load Balancer and target group
+- ECS cluster, task definition, and service
+- EFS file system, mount targets, and access point
+- Security groups for ALB, ECS, and EFS
+- IAM roles for ECS task execution and task permissions
 
-## 🖼️ Demo Screenshots
+## Repository Layout
 
-Here are a few screenshots of the deployed containerized web app:
+| Path | Purpose |
+| --- | --- |
+| `main.tf` | Root Terraform wiring for VPC, EFS, ALB, and ECS modules |
+| `variables.tf` | Region and container image inputs |
+| `modules/vpc/` | VPC, subnets, and NAT gateway |
+| `modules/alb/` | ALB, listener, target group, and ALB security group |
+| `modules/ecs-fargate/` | ECS cluster, task definition, service, and IAM roles |
+| `modules/efs/` | EFS file system, mount targets, access point, and security group |
+| `diagram/` | Architecture diagram |
+| `images/` | Demo screenshots |
 
-![Demo Screenshot 1](images/demo1.png)  
-![Demo Screenshot 2](images/demo2.png)
-![Demo Screenshot 3](images/demo3.png)  
-![Demo Screenshot 4](images/demo4.png)
+## How To Deploy
+
+Prerequisites:
+
+- AWS credentials configured locally
+- Terraform installed
+- A region where the selected services are available
+
+Deploy:
+
+```bash
+terraform init
+terraform plan
+terraform apply
+terraform output alb_dns_name
+```
+
+Open the ALB DNS name in a browser after the service is healthy.
+
+## How To Clean Up
+
+```bash
+terraform destroy
+```
+
+Review the destroy plan before confirming. EFS, load balancers, NAT gateways, and CloudWatch resources can continue to create cost if left behind.
+
+## Security Notes
+
+- The ALB listener is public HTTP on port 80. This is demo-only; HTTPS with ACM is a future improvement.
+- ECS task ingress is limited to the ALB security group.
+- The EFS security group currently allows NFS from the VPC CIDR. A stronger version would allow NFS only from the ECS task security group.
+- Outbound egress is broad in the demo security groups.
+- No authentication or application-layer authorization is implemented.
+
+## Cost Notes
+
+Potential standing cost drivers include:
+
+- NAT gateway hourly charges and data processing
+- Application Load Balancer hourly charges
+- Fargate task runtime
+- EFS storage and throughput
+- CloudWatch logs if logging is added or enabled later
+
+Destroy the stack after testing if you do not need it running.
+
+## Limitations
+
+- No ECS service autoscaling is configured.
+- The ALB uses HTTP, not HTTPS.
+- No custom domain or certificate is configured.
+- The task definition uses a simple container image input and a bootstrap container to seed basic content.
+- No CI/CD workflow is included.
+- Observability is minimal.
+- IAM and security group rules should be reviewed before using this pattern outside a demo account.
+
+## Next Improvements
+
+- Add HTTPS listener support with ACM.
+- Add ECS service autoscaling policies.
+- Scope EFS access to the ECS task security group.
+- Add CloudWatch log configuration for containers.
+- Add health check tuning and deployment circuit breaker settings.
+- Add a validation workflow for Terraform formatting and validation.
+
+## Project Maturity
+
+Maturity: baseline learning lab.
+
+This repo is useful for discussing Fargate networking, ALB routing, and EFS trade-offs. It needs additional security, operations, and deployment controls before it should be treated as a production architecture.
