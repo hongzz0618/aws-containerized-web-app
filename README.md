@@ -66,6 +66,7 @@ The Terraform configuration provisions:
 | --- | --- |
 | `main.tf` | Root Terraform wiring for VPC, EFS, ALB, and ECS modules |
 | `variables.tf` | Region and container image inputs |
+| `app/` | Minimal TypeScript sample app and Dockerfile |
 | `modules/vpc/` | VPC, subnets, and NAT gateway |
 | `modules/alb/` | ALB, listener, target group, and ALB security group |
 | `modules/ecs-fargate/` | ECS cluster, task definition, service, and IAM roles |
@@ -91,6 +92,21 @@ terraform output alb_dns_name
 ```
 
 Open the ALB DNS name in a browser after the service is healthy.
+
+## Local Container App
+
+The `app/` directory contains a small Node.js and TypeScript HTTP service with `GET /`, `GET /health`, and 404 responses for unknown routes. The included Dockerfile builds and runs the compiled service on port 3000.
+
+Validate the app locally:
+
+```bash
+cd app
+npm ci
+npm run build
+npm test
+```
+
+Terraform deployment still uses the configured `container_image` value. Wiring this sample image into ECS, adding ECR, and publishing immutable image tags are left for a later batch.
 
 ## How To Clean Up
 

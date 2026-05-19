@@ -41,4 +41,5 @@ desktop.ini
 *~
 
 node_modules/
+app/dist/
 *.zip
