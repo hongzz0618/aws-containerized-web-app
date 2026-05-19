@@ -41,7 +41,7 @@ resource "aws_ecs_task_definition" "this" {
     },
     {
       name      = "bootstrap"
-      image     = "busybox"
+      image     = "busybox:1.36"
       essential = false
       command = [
         "sh", "-c",

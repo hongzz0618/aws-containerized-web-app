@@ -108,6 +108,8 @@ npm test
 
 Terraform deployment still uses the configured `container_image` value. Wiring this sample image into ECS, adding ECR, and publishing immutable image tags are left for a later batch.
 
+Use an explicit image tag or immutable digest for `container_image`, such as `nginx:1.27-alpine` or an image reference ending in `@sha256:...`. The local app Dockerfile can be used to build an owned image, but ECS still runs the configured image until image publishing and wiring are added later.
+
 ## How To Clean Up
 
 ```bash
