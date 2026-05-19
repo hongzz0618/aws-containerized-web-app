@@ -2,6 +2,11 @@ resource "aws_ecs_cluster" "this" {
   name = var.cluster_name
 }
 
+resource "aws_cloudwatch_log_group" "ecs" {
+  name              = "/ecs/${var.cluster_name}"
+  retention_in_days = var.log_retention_days
+}
+
 resource "aws_ecs_task_definition" "this" {
   family                   = "fargate-task"
   network_mode             = "awsvpc"
@@ -21,6 +26,14 @@ resource "aws_ecs_task_definition" "this" {
         hostPort      = var.container_port
         protocol      = "tcp"
       }]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
       mountPoints = [{
         sourceVolume  = "efs-volume"
         containerPath = "/usr/share/nginx/html"
@@ -34,6 +47,14 @@ resource "aws_ecs_task_definition" "this" {
         "sh", "-c",
         "test -f /usr/share/nginx/html/index.html || echo '<h1>It works (EFS)!</h1>' > /usr/share/nginx/html/index.html"
       ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
+      }
       mountPoints = [{
         sourceVolume  = "efs-volume"
         containerPath = "/usr/share/nginx/html"
@@ -60,6 +81,13 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
 
+  health_check_grace_period_seconds = 60
+
+  deployment_circuit_breaker {
+    enable   = true
+    rollback = true
+  }
+
   network_configuration {
     subnets         = var.private_subnets
     security_groups = [aws_security_group.ecs.id]
@@ -70,8 +98,6 @@ resource "aws_ecs_service" "this" {
     container_name   = "app"
     container_port   = var.container_port
   }
-
-  depends_on = [var.alb_target_group_arn]
 }
 
 resource "aws_security_group" "ecs" {
@@ -123,6 +149,10 @@ variable "cluster_name" {
   type = string
 }
 
+variable "aws_region" {
+  type = string
+}
+
 variable "container_image" {
   type = string
 }
@@ -132,6 +162,10 @@ variable "container_port" {
 }
 
 variable "desired_count" {
+  type = number
+}
+
+variable "log_retention_days" {
   type = number
 }
 

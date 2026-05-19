@@ -31,8 +31,9 @@ Runtime request flow:
 - The ALB forwards the request to the ECS target group.
 - A Fargate task serves the application from private subnets.
 - The task can mount EFS when shared persistent files are needed.
+- Container logs are sent to CloudWatch Logs for basic runtime inspection.
 
-The ECS service uses a fixed desired count. Autoscaling is not currently implemented.
+The ECS service uses a fixed desired count. Autoscaling is not currently implemented. Basic deployment rollback and ALB target health behavior are configured.
 
 ## AWS Services Used
 
@@ -44,6 +45,7 @@ The ECS service uses a fixed desired count. Autoscaling is not currently impleme
 | Elastic Load Balancing | Routes HTTP traffic to ECS tasks |
 | Amazon EFS | Provides shared persistent file storage |
 | AWS IAM | Provides ECS task execution and task roles |
+| Amazon CloudWatch Logs | Stores ECS task container logs |
 
 ## What Terraform Creates
 
@@ -56,6 +58,7 @@ The Terraform configuration provisions:
 - EFS file system, mount targets, and access point
 - Security groups for ALB, ECS, and EFS
 - IAM roles for ECS task execution and task permissions
+- CloudWatch log group for ECS task logs
 
 ## Repository Layout
 
@@ -113,7 +116,7 @@ Potential standing cost drivers include:
 - Application Load Balancer hourly charges
 - Fargate task runtime
 - EFS storage and throughput
-- CloudWatch logs if logging is added or enabled later
+- CloudWatch Logs storage and ingestion
 
 Destroy the stack after testing if you do not need it running.
 
@@ -124,7 +127,7 @@ Destroy the stack after testing if you do not need it running.
 - No custom domain or certificate is configured.
 - The task definition uses a simple container image input and a bootstrap container to seed basic content.
 - No CI/CD workflow is included.
-- Observability is minimal.
+- Observability is limited to ECS task logs and ALB target health checks.
 - IAM and security group rules should be reviewed before using this pattern outside a learning or sandbox account.
 
 ## Architecture Trade-offs
@@ -137,9 +140,8 @@ Destroy the stack after testing if you do not need it running.
 
 ## Next Improvements
 
-- Add CloudWatch log configuration for containers.
 - Add HTTPS listener support with ACM.
-- Add health check tuning and deployment circuit breaker settings.
+- Add CloudWatch metrics and alarms for ECS and ALB signals.
 - Add ECS service autoscaling policies.
 - Add a validation workflow for Terraform formatting and validation.
 

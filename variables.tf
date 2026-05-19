@@ -9,3 +9,9 @@ variable "container_image" {
   type        = string
   default     = "nginx:latest"
 }
+
+variable "log_retention_days" {
+  description = "CloudWatch Logs retention period for ECS task logs"
+  type        = number
+  default     = 14
+}
