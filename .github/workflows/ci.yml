@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  app:
+    name: App validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build app
+        working-directory: app
+        run: npm run build
+
+      - name: Test app
+        working-directory: app
+        run: npm test
+
+      - name: Build app container
+        run: docker build -t aws-containerized-web-app-local ./app
+
+  terraform:
+    name: Terraform validation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive
+
+      - name: Initialize Terraform
+        run: terraform init -backend=false -input=false
+
+      - name: Validate Terraform
+        run: terraform validate -no-color
