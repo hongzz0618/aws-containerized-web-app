@@ -67,6 +67,7 @@ The Terraform configuration provisions:
 | `main.tf` | Root Terraform wiring for VPC, EFS, ALB, and ECS modules |
 | `variables.tf` | Region and container image inputs |
 | `app/` | Minimal TypeScript sample app and Dockerfile |
+| `.github/workflows/ci.yml` | GitHub Actions workflow for app, container, and Terraform validation |
 | `modules/vpc/` | VPC, subnets, and NAT gateway |
 | `modules/alb/` | ALB, listener, target group, and ALB security group |
 | `modules/ecs-fargate/` | ECS cluster, task definition, service, and IAM roles |
@@ -110,6 +111,19 @@ Terraform deployment still uses the configured `container_image` value. Wiring t
 
 Use an explicit image tag or immutable digest for `container_image`, such as `nginx:1.27-alpine` or an image reference ending in `@sha256:...`. The local app Dockerfile can be used to build an owned image, but ECS still runs the configured image until image publishing and wiring are added later.
 
+## CI Validation
+
+This repository includes a GitHub Actions CI workflow for local-style validation. The workflow:
+
+- Installs the sample app dependencies with `npm ci`
+- Builds and tests the TypeScript app
+- Builds the sample app Docker image
+- Runs `terraform fmt -check -recursive`
+- Runs `terraform init -backend=false -input=false`
+- Runs `terraform validate -no-color`
+
+The workflow validates the application, container build, and Terraform configuration. It does not deploy resources to AWS.
+
 ## How To Clean Up
 
 ```bash
@@ -144,7 +158,7 @@ Destroy the stack after testing if you do not need it running.
 - The ALB uses HTTP, not HTTPS.
 - No custom domain or certificate is configured.
 - The task definition uses a simple container image input and a bootstrap container to seed basic content.
-- No CI/CD workflow is included.
+- The CI workflow validates changes but does not publish container images or deploy to AWS.
 - Observability is limited to ECS task logs and ALB target health checks.
 - IAM and security group rules should be reviewed before using this pattern outside a learning or sandbox account.
 
@@ -161,7 +175,7 @@ Destroy the stack after testing if you do not need it running.
 - Add HTTPS listener support with ACM.
 - Add CloudWatch metrics and alarms for ECS and ALB signals.
 - Add ECS service autoscaling policies.
-- Add a validation workflow for Terraform formatting and validation.
+- Add an image publishing path for the sample app, such as an ECR-backed workflow with immutable image tags.
 
 ## Project Maturity
 
