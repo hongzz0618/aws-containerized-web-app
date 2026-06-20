@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   app:
     name: App validation
@@ -22,16 +25,21 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Build app
+      - name: Typecheck app
         working-directory: app
-        run: npm run build
+        run: npm run typecheck
 
       - name: Test app
         working-directory: app
         run: npm test
 
-      - name: Build app container
-        run: docker build -t aws-containerized-web-app-local ./app
+      - name: Build app
+        working-directory: app
+        run: npm run build
+
+      - name: Run container smoke test
+        working-directory: app
+        run: npm run test:container
 
   terraform:
     name: Terraform validation
