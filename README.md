@@ -103,11 +103,26 @@ Validate the app locally:
 ```bash
 cd app
 npm ci
-npm run build
+npm run typecheck
 npm test
+npm run build
 ```
 
-Terraform deployment still uses the configured `container_image` value. Wiring this sample image into ECS, adding ECR, and publishing immutable image tags are left for a later batch.
+Build the container image:
+
+```bash
+docker build -t aws-containerized-web-app-local .
+```
+
+Run the container smoke test from `app/` when the Docker daemon is active:
+
+```bash
+npm run test:container
+```
+
+The smoke test builds the image, starts a temporary container on `127.0.0.1`, runs it with a read-only root filesystem, drops Linux capabilities, enables `no-new-privileges`, checks `GET /health` and `GET /`, verifies the runtime UID is not root, stops the container through Docker, checks shutdown logs, and removes the temporary container.
+
+Terraform deployment still uses the configured `container_image` value and the existing nginx/EFS path. Wiring this sample image into ECS, adding ECR, and publishing immutable image tags are left for a later batch. AWS runtime validation remains pending until the infrastructure is aligned and deployed.
 
 Use an explicit image tag or immutable digest for `container_image`, such as `nginx:1.27-alpine` or an image reference ending in `@sha256:...`. The local app Dockerfile can be used to build an owned image, but ECS still runs the configured image until image publishing and wiring are added later.
 
@@ -116,8 +131,8 @@ Use an explicit image tag or immutable digest for `container_image`, such as `ng
 This repository includes a GitHub Actions CI workflow for local-style validation. The workflow:
 
 - Installs the sample app dependencies with `npm ci`
-- Builds and tests the TypeScript app
-- Builds the sample app Docker image
+- Typechecks, builds, and tests the TypeScript app
+- Builds the sample app Docker image and runs the container smoke test
 - Runs `terraform fmt -check -recursive`
 - Runs `terraform init -backend=false -input=false`
 - Runs `terraform validate -no-color`
