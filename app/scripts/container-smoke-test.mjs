@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 
@@ -90,7 +91,15 @@ async function fetchJson(url) {
 
   try {
     const response = await fetch(url, { signal: controller.signal });
-    const body = await response.json();
+    const responseText = await response.text();
+    let body;
+
+    try {
+      body = JSON.parse(responseText);
+    } catch (error) {
+      throw new Error(`Invalid JSON response from ${url}: ${error.message}`);
+    }
+
     return { body, status: response.status };
   } finally {
     clearTimeout(timeout);
@@ -120,11 +129,10 @@ async function waitForHealth(baseUrl) {
 }
 
 function assertDeepEqual(actual, expected, label) {
-  const actualJson = JSON.stringify(actual);
-  const expectedJson = JSON.stringify(expected);
-
-  if (actualJson !== expectedJson) {
-    throw new Error(`${label} mismatch. Expected ${expectedJson}; received ${actualJson}`);
+  try {
+    assert.deepStrictEqual(actual, expected);
+  } catch (error) {
+    throw new Error(`${label} response body mismatch: ${error.message}`);
   }
 }
 
