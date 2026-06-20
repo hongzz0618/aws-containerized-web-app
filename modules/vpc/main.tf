@@ -2,10 +2,10 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.8.1"
 
-  name = "fargate-vpc"
+  name = "${var.name_prefix}-vpc"
   cidr = "10.0.0.0/16"
 
-  azs             = ["us-east-1a", "us-east-1b"]
+  azs             = var.azs
   private_subnets = ["10.0.1.0/24", "10.0.2.0/24"]
   public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
 
@@ -13,8 +13,16 @@ module "vpc" {
   single_nat_gateway = true
 
   tags = {
-    Project = "fargate-web"
+    Project = var.name_prefix
   }
+}
+
+variable "name_prefix" {
+  type = string
+}
+
+variable "azs" {
+  type = list(string)
 }
 
 output "vpc_id" {
