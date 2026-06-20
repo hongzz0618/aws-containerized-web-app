@@ -20,7 +20,7 @@ Realistic examples include a simple backend web service or internal service wher
 
 ## Architecture Overview
 
-![Containerized Web App Diagram](diagram/containerized-web-app.png)
+![Containerized Web App Diagram](diagram/containerized-web-app.svg)
 
 The Terraform configuration creates a VPC with public and private subnets, an internet-facing ALB, and an ECS Fargate service. The ALB listens on HTTP port 80 and forwards requests to the Node.js application container on port 3000.
 
