@@ -6,7 +6,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/server.js",
-    "test": "npm run build && node --test dist/test/server.test.js"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test dist/test/server.test.js",
+    "test:container": "node scripts/container-smoke-test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
