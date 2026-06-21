@@ -41,6 +41,7 @@ The ECS service uses a fixed desired count. Autoscaling is not currently impleme
 | Amazon VPC | Provides public and private networking |
 | Amazon ECS | Runs the container service |
 | AWS Fargate | Provides serverless container compute |
+| Amazon ECR | Stores the application image in a private immutable-tag repository |
 | Elastic Load Balancing | Routes HTTP traffic to ECS tasks |
 | AWS IAM | Provides ECS task execution and task roles |
 | Amazon CloudWatch Logs | Stores ECS task container logs |
@@ -51,6 +52,7 @@ The Terraform configuration provisions:
 
 - VPC with public and private subnets
 - NAT gateway for private subnet outbound access, which creates standing hourly cost while deployed
+- Private ECR repository with immutable tags, scan-on-push, AES256 encryption, and lifecycle retention
 - Application Load Balancer and target group
 - ECS cluster, task definition, and service
 - Security groups for ALB and ECS
@@ -65,9 +67,11 @@ The Terraform configuration provisions:
 | `variables.tf` | Region, naming, application image, and runtime inputs |
 | `app/` | Minimal TypeScript sample app and Dockerfile |
 | `.github/workflows/ci.yml` | GitHub Actions workflow for app, container, and Terraform validation |
+| `docs/deployment-runbook.md` | Manual ECR image publication and digest-pinned deployment workflow |
 | `modules/vpc/` | VPC, subnets, and NAT gateway |
 | `modules/alb/` | ALB, listener, target group, and ALB security group |
 | `modules/ecs-fargate/` | ECS cluster, task definition, service, and IAM roles |
+| `modules/ecr/` | Private ECR repository and lifecycle policy |
 | `diagram/` | Architecture diagram |
 | `images/` | Demo screenshots |
 
@@ -77,21 +81,22 @@ Prerequisites:
 
 - AWS credentials configured locally
 - Terraform installed
-- An externally built application image reference for `app_image_uri`
+- A digest-pinned application image reference for `app_image_uri`
 - A region where the selected services are available
 
-Deploy:
+ECR has a bootstrap dependency: the repository must exist before the first image can be pushed, while the full ECS deployment needs an existing image. Use the deployment runbook for the controlled manual publication flow:
+
+[Container Image Deployment Runbook](docs/deployment-runbook.md)
+
+Initial review:
 
 ```bash
 terraform init
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars and set app_image_uri to an image you control.
 terraform plan
-terraform apply
-terraform output alb_dns_name
 ```
 
-Open the ALB DNS name in a browser after the service is healthy.
+After the ECR repository is bootstrapped, publish an immutable `git-<full-commit-sha>` image tag manually, retrieve its digest, set `app_image_uri` to `<repository-url>@sha256:<digest>`, and use a normal Terraform plan/apply. Real AWS runtime validation remains pending until that controlled deployment is performed.
 
 ## Local Container App
 
@@ -121,9 +126,9 @@ npm run test:container
 
 The smoke test builds the image, starts a temporary container on `127.0.0.1`, runs it with a read-only root filesystem, drops Linux capabilities, enables `no-new-privileges`, checks `GET /health` and `GET /`, verifies the runtime UID is not root, stops the container through Docker, checks shutdown logs, and removes the temporary container.
 
-Terraform expects `app_image_uri` to reference an externally built application image. This repository does not create ECR yet, and image publication remains manual or external to this Terraform configuration. AWS runtime validation remains pending until an image is supplied and the stack is deployed.
+Terraform manages a private ECR repository for the application image. Repository tags are immutable, scan-on-push is enabled, and a lifecycle policy expires untagged images after 7 days while retaining the newest 10 `git-` tagged images.
 
-Use an immutable digest for deterministic deployment when possible, such as an image reference ending in `@sha256:...`. The local app Dockerfile can be used to build an owned image, but this phase does not create or push that image to a registry.
+CI validates the application container but does not publish images. Image publication remains a manual workflow. ECS still receives the full image reference through `app_image_uri`; use a digest-pinned ECR reference such as `<repository-url>@sha256:<digest>` after following the runbook.
 
 ## CI Validation
 
@@ -146,12 +151,15 @@ terraform destroy
 
 Review the destroy plan before confirming. Load balancers, NAT gateways, Fargate tasks, and CloudWatch resources can continue to create cost if left behind.
 
+The ECR repository uses `force_delete = false`. Terraform cannot destroy a non-empty repository while this setting remains false; remove images intentionally before complete cleanup. This protects stored images from accidental deletion.
+
 ## Security Notes
 
 - The ALB listener is public HTTP on port 80 for learning/demo purposes. Real deployments should add HTTPS with ACM, redirect HTTP to HTTPS, and review security controls.
 - ECS task ingress is limited to the ALB security group.
 - The ECS task definition enables a read-only root filesystem and drops Linux capabilities. ECS task definitions do not expose a direct `no-new-privileges` setting equivalent to the local Docker smoke test.
 - The execution role is used for ECS startup operations such as pulling the image and writing logs. The task role has no additional application policies because the app does not call AWS APIs.
+- Private ECS tasks continue to use NAT for outbound access, including image pulls and service calls.
 - Outbound egress is broad in the demo security groups.
 - No authentication or application-layer authorization is implemented.
 
@@ -171,7 +179,7 @@ Destroy the stack after testing if you do not need it running.
 - No ECS service autoscaling is configured.
 - The ALB uses HTTP, not HTTPS.
 - No custom domain or certificate is configured.
-- Terraform expects an externally supplied application image URI; ECR is not created yet.
+- ECR image publication is manual; CI does not push images or deploy to AWS.
 - The ECS task uses `PORT=3000` and `SHUTDOWN_TIMEOUT_MS=10000`. ECS `stopTimeout` is set to 15 seconds, and the ALB target group deregistration delay is set to 30 seconds.
 - The CI workflow validates changes but does not publish container images or deploy to AWS.
 - Observability is limited to ECS task logs and ALB target health checks.
@@ -189,7 +197,7 @@ Destroy the stack after testing if you do not need it running.
 - Add HTTPS listener support with ACM.
 - Add CloudWatch metrics and alarms for ECS and ALB signals.
 - Add ECS service autoscaling policies.
-- Add ECR and an image publishing path for the sample app with immutable image references.
+- Perform a controlled AWS deployment and capture runtime validation evidence.
 
 ## Project Maturity
 
