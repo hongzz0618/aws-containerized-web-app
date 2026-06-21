@@ -15,3 +15,10 @@ service_max_capacity  = 3
 # Optional: provide existing SNS topic ARNs to receive alarm and recovery notifications.
 alarm_action_arns = []
 ok_action_arns    = []
+
+# Optional: create a GitHub OIDC role for the manual ECR image release workflow.
+# The GitHub OIDC provider is an account-level prerequisite and is not created by this stack.
+enable_github_ecr_release_role = false
+github_oidc_provider_arn       = ""
+github_repository              = "hongzz0618/aws-containerized-web-app"
+github_release_environment     = "container-release"

@@ -59,6 +59,7 @@ The Terraform configuration provisions:
 - VPC with public and private subnets
 - NAT gateway for private subnet outbound access, which creates standing hourly cost while deployed
 - Private ECR repository with immutable tags, scan-on-push, AES256 encryption, and lifecycle retention
+- Optional GitHub OIDC IAM role for manually publishing validated images to the ECR repository
 - Application Load Balancer and target group
 - ECS cluster, task definition, and service
 - ECS service Application Auto Scaling target and CPU/memory target tracking policies
@@ -75,6 +76,7 @@ The Terraform configuration provisions:
 | `variables.tf` | Region, naming, application image, and runtime inputs |
 | `app/` | Minimal TypeScript sample app and Dockerfile |
 | `.github/workflows/ci.yml` | GitHub Actions workflow for app, container, and Terraform validation |
+| `.github/workflows/release-container-image.yml` | Manual GitHub Actions workflow for approved ECR image publication |
 | `docs/deployment-runbook.md` | Manual ECR image publication and digest-pinned deployment workflow |
 | `docs/adr/` | Architecture decision records for operational trade-offs |
 | `modules/vpc/` | VPC, subnets, and NAT gateway |
@@ -149,7 +151,7 @@ CI uses the same Dockerfile and build context, but builds the final image once w
 
 Terraform manages a private ECR repository for the application image. Repository tags are immutable, scan-on-push is enabled, and a lifecycle policy expires untagged images after 7 days while retaining the newest 10 `git-` tagged images.
 
-CI validates the application container but does not publish images. Image publication remains a manual workflow. ECS still receives the full image reference through `app_image_uri`; use a digest-pinned ECR reference such as `<repository-url>@sha256:<digest>` after following the runbook.
+CI validates the application container but does not publish images. Image publication is handled by a separate manual GitHub Actions workflow that requires the `container-release` GitHub Environment, uses GitHub OIDC for short-lived AWS credentials, publishes an immutable `git-<full-sha>` tag to ECR, and records the remote digest. Publishing an image is not an ECS deployment; ECS still receives the full image reference through `app_image_uri`, preferably as `<repository-url>@sha256:<digest>` after following the runbook.
 
 ## CI Validation
 
@@ -170,6 +172,12 @@ This repository includes a GitHub Actions CI workflow for local-style validation
 The workflow validates the application, container build, container reports, and Terraform configuration. It does not upload SARIF, authenticate to AWS, push to ECR, or deploy resources to AWS.
 
 The vulnerability report keeps all reported severities for review. The initial gate is intentionally narrow: HIGH vulnerabilities are visible but do not block CI, unfixed CRITICAL vulnerabilities remain in the report but do not block the current gate, and fixable CRITICAL vulnerabilities fail the workflow. This is a starting policy for a reference project, not a claim that the image is free of risk or that the SBOM is a complete compliance inventory.
+
+## Manual Image Release
+
+The `Release Container Image` workflow is `workflow_dispatch` only. It requires running from `main`, a full 40-character SHA confirmation, and approval through the fixed `container-release` GitHub Environment before it can assume the optional ECR release role. The workflow builds the final image once, smoke-tests and scans that same local image, then uses OIDC to push only the immutable `git-<full-sha>` tag to the existing ECR repository.
+
+The release workflow writes the resolved ECR digest URI to the job summary and does not update an ECS task definition, update an ECS service, create a GitHub Release, sign the image, generate provenance, or deploy AWS resources.
 
 ## How To Clean Up
 
@@ -218,6 +226,7 @@ Destroy the stack after testing if you do not need it running.
 - The ALB uses HTTP, not HTTPS.
 - No custom domain or certificate is configured.
 - ECR image publication is manual; CI does not push images or deploy to AWS.
+- The manual ECR release workflow and IAM configuration are statically validated. Live OIDC assumption and ECR publication require Terraform deployment, GitHub Environment setup, and manual workflow execution.
 - The ECS task uses `PORT=3000` and `SHUTDOWN_TIMEOUT_MS=10000`. ECS `stopTimeout` is set to 15 seconds, and the ALB target group deregistration delay is set to 30 seconds.
 - The CI workflow validates changes but does not publish container images or deploy to AWS.
 - Autoscaling activity, alarm data, and rollback behavior still require controlled AWS deployment validation.

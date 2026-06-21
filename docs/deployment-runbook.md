@@ -2,18 +2,155 @@
 
 This runbook describes the controlled manual path for publishing the CI-validated application image to the Terraform-managed private ECR repository and then supplying ECS with an immutable image digest.
 
-The workflow is intentionally manual in this phase. CI validates the application and container build, but it does not authenticate to AWS, push images, or deploy ECS.
+The release workflow is intentionally manual in this phase. CI validates the application and container build without AWS credentials. The separate `Release Container Image` workflow requires GitHub Environment approval, uses GitHub OIDC for short-lived AWS credentials, pushes an immutable image tag to ECR, and does not deploy ECS.
 
 ## Prerequisites
 
-- AWS CLI authenticated for the selected account and region.
-- Docker daemon running locally.
 - Terraform installed.
 - Current Git commit available locally.
 - Permissions to create and manage this repository's VPC, ALB, ECS, IAM, CloudWatch Logs, and ECR resources.
 - A selected AWS region that matches `var.aws_region`.
+- An existing account-level GitHub Actions OIDC provider for `https://token.actions.githubusercontent.com`.
+- Permission to create and configure GitHub repository environments and variables.
 
-Do not store AWS credentials, Docker tokens, or ECR login output in this repository.
+Do not store AWS access keys, Docker tokens, ECR login output, OIDC tokens, or temporary session credentials in this repository or in GitHub secrets. The release workflow uses OIDC instead of long-lived AWS credentials.
+
+## Account-Level GitHub OIDC Provider
+
+The GitHub OIDC provider is an AWS account-level shared resource. This application stack does not create `aws_iam_openid_connect_provider`, because doing so can conflict with an existing account-wide provider.
+
+Before enabling the release role, confirm that the selected AWS account has an OIDC provider with:
+
+- Provider URL: `https://token.actions.githubusercontent.com`
+- Audience/client ID: `sts.amazonaws.com`
+- Thumbprint: current GitHub Actions OIDC thumbprint per AWS/GitHub guidance
+
+Use the provider ARN as `github_oidc_provider_arn`. It has this shape:
+
+```text
+arn:aws:iam::<account-id>:oidc-provider/token.actions.githubusercontent.com
+```
+
+## Terraform Release Role Configuration
+
+The optional release role is disabled by default. To create it, set:
+
+```hcl
+enable_github_ecr_release_role = true
+github_oidc_provider_arn       = "arn:aws:iam::<account-id>:oidc-provider/token.actions.githubusercontent.com"
+github_repository              = "hongzz0618/aws-containerized-web-app"
+github_release_environment     = "container-release"
+```
+
+The role trust policy is intentionally narrow:
+
+```text
+aud = sts.amazonaws.com
+sub = repo:hongzz0618/aws-containerized-web-app:environment:container-release
+```
+
+The subject uses the GitHub Environment form. Do not expect the same OIDC `sub` value to include a branch name. Branch safety is enforced by the workflow rejecting non-`main` refs and by the GitHub Environment deployment branch rule described below.
+
+The IAM role uses AWS's minimum role maximum session duration of 3600 seconds. The release workflow requests a shorter 1800-second OIDC session for each run.
+
+After applying Terraform in a controlled change window, read the values needed by GitHub:
+
+```bash
+terraform output -raw github_ecr_release_role_arn
+terraform output -raw ecr_repository_name
+terraform output -raw ecr_repository_url
+```
+
+Workflow and IAM configuration are statically validated in this repository. Live OIDC assumption and ECR publication require Terraform deployment and a manual GitHub Actions run.
+
+## GitHub Environment
+
+Before the first real release run, manually create this GitHub Environment in the repository settings:
+
+```text
+container-release
+```
+
+Configure it before running the workflow:
+
+- Deployment branches: allow only `main`.
+- Required reviewers: enable if the current GitHub plan supports it. In a solo repository, the owner can be the reviewer.
+- Prevent self-review: leave disabled unless another reviewer is available.
+- Admin bypass: disable or restrict it according to how tightly this repository should enforce approvals.
+- Variables: add environment or repository variables, not AWS long-lived secrets.
+
+Required variables:
+
+| Variable | Value |
+| --- | --- |
+| `AWS_REGION` | AWS region for the ECR repository, for example `eu-west-1` |
+| `AWS_ACCOUNT_ID` | 12-digit AWS account ID |
+| `AWS_ECR_RELEASE_ROLE_ARN` | `terraform output -raw github_ecr_release_role_arn` |
+| `ECR_REPOSITORY_NAME` | `terraform output -raw ecr_repository_name` |
+
+Do not add `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, or `AWS_SESSION_TOKEN`.
+
+If `container-release` does not exist, do not run the workflow just to let GitHub create it implicitly. Create and protect the environment first.
+
+## Manual GitHub Actions Release
+
+Use the Actions page:
+
+1. Select `Release Container Image`.
+2. Choose branch `main`.
+3. Enter the full 40-character commit SHA from `main` as `confirm_sha`.
+4. Start the workflow.
+5. Approve the `container-release` environment job when prompted.
+
+The workflow validates:
+
+- it is running from `refs/heads/main`
+- `GITHUB_SHA` is a full lowercase 40-character SHA
+- `confirm_sha` is a full lowercase 40-character SHA
+- `confirm_sha` equals `GITHUB_SHA`
+- the checked out commit equals `GITHUB_SHA`
+
+Then it performs this order:
+
+```text
+checkout exact SHA
+npm ci
+typecheck, tests, build, npm audit --omit=dev
+build one final image
+smoke test the same image
+generate SBOM and vulnerability report from the same image
+fail on fixable CRITICAL vulnerabilities
+assume the ECR release role through OIDC
+log in to ECR
+fail if git-<sha> already exists
+push git-<sha>
+query and validate the remote digest
+```
+
+The workflow summary includes the source commit, immutable tag, ECR repository, remote digest, digest URI, scan status, and the note that ECS was not updated.
+
+## Duplicate Releases
+
+ECR tags are immutable. If `git-<full-sha>` already exists, the workflow queries the existing digest and fails closed with an explanation. It does not overwrite, delete, retag, skip as success, or switch to a mutable tag.
+
+## Digest Use For Deployment
+
+After a successful release, copy the digest URI from the workflow summary:
+
+```text
+<repository-url>@sha256:<64-hex-digest>
+```
+
+Use that value as `app_image_uri` for a later, separate Terraform deployment. Publishing the image is not an ECS deployment. Do not treat the release workflow as evidence that ECS task definition updates, service rollout, alarms, rollback, or runtime behavior have been live-validated.
+
+Common OIDC failures:
+
+- The AWS OIDC provider ARN does not point to `token.actions.githubusercontent.com`.
+- The GitHub Environment name differs from `container-release`.
+- The trust policy expects a branch subject instead of `repo:<owner>/<repo>:environment:container-release`.
+- The workflow was run from a non-`main` branch.
+- The GitHub Environment lacks the `main`-only deployment branch rule.
+- Required GitHub variables are missing or use the wrong account, region, repository, or role ARN.
 
 ## Repository Bootstrap
 
@@ -44,6 +181,16 @@ PowerShell:
 ```powershell
 $EcrRepositoryUrl = terraform output -raw ecr_repository_url
 ```
+
+## Local Manual Publication Fallback
+
+The GitHub Actions release workflow is the preferred publication path. The following local CLI steps are a fallback for a controlled maintenance case where you intentionally use local AWS credentials and a local Docker daemon. They are not required for the OIDC workflow above.
+
+Fallback prerequisites:
+
+- AWS CLI authenticated for the selected account and region.
+- Docker daemon running locally.
+- Current Git commit available locally.
 
 ## Image Tag
 
