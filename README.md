@@ -145,6 +145,8 @@ npm run test:container
 
 The smoke test builds the image, starts a temporary container on `127.0.0.1`, runs it with a read-only root filesystem, drops Linux capabilities, enables `no-new-privileges`, checks `GET /health` and `GET /`, verifies the runtime UID is not root, stops the container through Docker, checks shutdown logs, and removes the temporary container.
 
+CI uses the same Dockerfile and build context, but builds the final image once with a commit-specific local tag, then reuses that same local image for the smoke test, SBOM generation, and vulnerability scanning. CI does not tag the image as `latest`, push it to ECR, or deploy it to AWS.
+
 Terraform manages a private ECR repository for the application image. Repository tags are immutable, scan-on-push is enabled, and a lifecycle policy expires untagged images after 7 days while retaining the newest 10 `git-` tagged images.
 
 CI validates the application container but does not publish images. Image publication remains a manual workflow. ECS still receives the full image reference through `app_image_uri`; use a digest-pinned ECR reference such as `<repository-url>@sha256:<digest>` after following the runbook.
@@ -155,13 +157,19 @@ This repository includes a GitHub Actions CI workflow for local-style validation
 
 - Installs the sample app dependencies with `npm ci`
 - Typechecks, builds, and tests the TypeScript app
-- Builds the sample app Docker image and runs the container smoke test
+- Builds the final sample app Docker image once and runs the container smoke test against that image
+- Generates a CycloneDX JSON SBOM from the same final image
+- Generates a Trivy JSON vulnerability report from the same final image and prints a human-readable summary in CI logs
+- Fails only when Trivy finds fixable CRITICAL vulnerabilities in the final image
+- Uploads the SBOM and vulnerability report as short-retention GitHub Actions artifacts
 - Runs `terraform fmt -check -recursive`
 - Runs `terraform init -backend=false -input=false`
 - Runs `terraform validate -no-color`
-- Runs focused static Terraform regression checks for autoscaling, deployment guardrails, alarm dimensions, and scope controls
+- Runs focused static Terraform and CI regression checks for autoscaling, deployment guardrails, alarm dimensions, scope controls, single-image scanning, artifact retention, and minimal workflow permissions
 
-The workflow validates the application, container build, and Terraform configuration. It does not deploy resources to AWS.
+The workflow validates the application, container build, container reports, and Terraform configuration. It does not authenticate to AWS, push to ECR, or deploy resources to AWS.
+
+The vulnerability report keeps all reported severities for review. The initial gate is intentionally narrow: HIGH vulnerabilities are visible but do not block CI, unfixed CRITICAL vulnerabilities remain in the report but do not block the current gate, and fixable CRITICAL vulnerabilities fail the workflow. This is a starting policy for a reference project, not a claim that the image is free of risk or that the SBOM is a complete compliance inventory.
 
 ## How To Clean Up
 

@@ -105,6 +105,37 @@ docker build -t "aws-containerized-web-app:$ImageTag" .
 Set-Location ..
 ```
 
+## CI Container Security Reports
+
+Before publishing an image, review the GitHub Actions run for the commit you plan to release. The CI app job builds one final local image, runs the container smoke test against that image, then generates reports from the same image. CI does not push to ECR and does not deploy AWS resources.
+
+Download the `container-security-reports` artifact from the workflow run. It contains:
+
+- `container-sbom.cdx.json`: CycloneDX JSON SBOM for the final image.
+- `container-vulnerabilities.json`: Trivy JSON vulnerability report for OS and library findings in the final image.
+
+For a quick local inspection:
+
+```bash
+jq '.bomFormat, .metadata.component.name, (.components | length)' artifacts/container-sbom.cdx.json
+jq '[.Results[]?.Vulnerabilities[]? | .Severity] | group_by(.) | map({severity: .[0], count: length})' artifacts/container-vulnerabilities.json
+```
+
+PowerShell:
+
+```powershell
+Get-Content artifacts/container-sbom.cdx.json | ConvertFrom-Json | Select-Object bomFormat
+Get-Content artifacts/container-vulnerabilities.json | ConvertFrom-Json | Select-Object -ExpandProperty Results
+```
+
+Use the Trivy fields to separate likely sources:
+
+- Base image and OS packages usually appear with Debian package metadata and image layer context.
+- Runtime npm dependencies appear as library findings from the installed production dependency tree.
+- Dev dependencies should not be treated as runtime container findings unless they are present in the final image.
+
+The current CI gate fails only on fixable CRITICAL vulnerabilities. HIGH findings and unfixed CRITICAL findings still require review before release, but they do not block this initial gate automatically. Do not ignore vulnerabilities only to make CI pass. Any exception should have a clear reason, narrow package or vulnerability scope, an owner, an expiration date, and a tracking issue or ticket. Prefer fixing the base image, OS package, or runtime dependency when a low-risk fix is available.
+
 ## Push
 
 Tag the local image with the ECR repository URL and immutable `git-<full-sha>` tag, then push it.
