@@ -19,10 +19,17 @@ data "aws_availability_zones" "available" {
 
 locals {
   name_prefix                       = "${var.project_name}-${var.environment}"
+  ecr_repository_name               = local.name_prefix
   azs                               = slice(data.aws_availability_zones.available.names, 0, 2)
   ecs_stop_timeout_seconds          = 15
   health_check_grace_period_seconds = 60
   alb_deregistration_delay_seconds  = 30
+}
+
+module "ecr" {
+  source          = "./modules/ecr"
+  name_prefix     = local.name_prefix
+  repository_name = local.ecr_repository_name
 }
 
 module "vpc" {
@@ -77,4 +84,19 @@ output "ecs_task_definition_arn" {
 
 output "app_image_uri" {
   value = var.app_image_uri
+}
+
+output "ecr_repository_name" {
+  description = "Name of the Terraform-managed private ECR repository."
+  value       = module.ecr.repository_name
+}
+
+output "ecr_repository_url" {
+  description = "URL of the Terraform-managed private ECR repository."
+  value       = module.ecr.repository_url
+}
+
+output "ecr_repository_arn" {
+  description = "ARN of the Terraform-managed private ECR repository."
+  value       = module.ecr.repository_arn
 }

@@ -35,9 +35,13 @@ variable "app_image_uri" {
       length(trimspace(var.app_image_uri)) > 0 &&
       !can(regex("\\s", var.app_image_uri)) &&
       lower(trimspace(var.app_image_uri)) != "latest" &&
-      !can(regex(":latest$", lower(trimspace(var.app_image_uri))))
+      !can(regex(":latest$", lower(trimspace(var.app_image_uri)))) &&
+      (
+        can(regex("@sha256:[0-9a-fA-F]{64}$", trimspace(var.app_image_uri))) ||
+        can(regex(":[^/:@]+$", trimspace(var.app_image_uri)))
+      )
     )
-    error_message = "app_image_uri must be non-empty, contain no whitespace, and must not be latest or end in :latest."
+    error_message = "app_image_uri must be non-empty, contain no whitespace, include an explicit non-latest tag or sha256 digest, and must not be latest or end in :latest."
   }
 }
 
