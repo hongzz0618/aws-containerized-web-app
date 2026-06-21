@@ -10,6 +10,7 @@ const READY_TIMEOUT_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 2_000;
 const appDir = new URL("..", import.meta.url);
 const imageName = process.env.CONTAINER_SMOKE_IMAGE || `aws-containerized-web-app-smoke:${Date.now()}-${process.pid}`;
+const skipImageBuild = process.env.CONTAINER_SMOKE_SKIP_BUILD === "true";
 const containerName = `aws-containerized-web-app-smoke-${Date.now()}-${process.pid}`;
 
 let containerCreated = false;
@@ -64,6 +65,14 @@ async function ensureDockerDaemon() {
       `Docker daemon is not available. Start Docker and rerun the container smoke test.\n${error.message}`,
       { environment: true }
     );
+  }
+}
+
+async function ensureImageExists() {
+  try {
+    await runDocker(["image", "inspect", imageName]);
+  } catch (error) {
+    throw new Error(`Container image ${imageName} does not exist locally. Build it before running with CONTAINER_SMOKE_SKIP_BUILD=true.\n${error.message}`);
   }
 }
 
@@ -195,8 +204,13 @@ async function main() {
   const hostPort = await getAvailablePort();
   const baseUrl = `http://127.0.0.1:${hostPort}`;
 
-  console.log(`Building image ${imageName}...`);
-  await runDocker(["build", "-t", imageName, "."], { stream: true });
+  if (skipImageBuild) {
+    console.log(`Using existing image ${imageName}...`);
+    await ensureImageExists();
+  } else {
+    console.log(`Building image ${imageName}...`);
+    await runDocker(["build", "-t", imageName, "."], { stream: true });
+  }
 
   console.log(`Creating container ${containerName} on ${baseUrl}...`);
   await runDocker([

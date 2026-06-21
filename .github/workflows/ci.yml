@@ -11,6 +11,8 @@ jobs:
   app:
     name: App validation
     runs-on: ubuntu-latest
+    env:
+      CI_IMAGE_REF: aws-containerized-web-app:ci-${{ github.sha }}
 
     steps:
       - name: Check out repository
@@ -37,9 +39,35 @@ jobs:
         working-directory: app
         run: npm run build
 
+      - name: Build final container image
+        run: docker build --file app/Dockerfile --tag "${CI_IMAGE_REF}" app
+
       - name: Run container smoke test
         working-directory: app
+        env:
+          CONTAINER_SMOKE_IMAGE: ${{ env.CI_IMAGE_REF }}
+          CONTAINER_SMOKE_SKIP_BUILD: "true"
         run: npm run test:container
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@v0.3.1
+        with:
+          cache: true
+          version: v0.71.2
+
+      - name: Generate container SBOM and vulnerability report
+        run: bash scripts/scan-container-image.sh "${CI_IMAGE_REF}"
+
+      - name: Upload container security reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-security-reports
+          path: |
+            artifacts/container-sbom.cdx.json
+            artifacts/container-vulnerabilities.json
+          if-no-files-found: ignore
+          retention-days: 14
 
   terraform:
     name: Terraform validation
@@ -68,3 +96,6 @@ jobs:
 
       - name: Run Terraform static regression checks
         run: node scripts/terraform-static-check.mjs
+
+      - name: Run CI static regression checks
+        run: node scripts/ci-static-check.mjs

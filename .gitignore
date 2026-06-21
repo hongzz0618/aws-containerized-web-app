@@ -11,6 +11,7 @@ override.tf.json
 
 # Terraform directories
 .terraform/
+.cache/trivy/
 
 # Sensitive files
 *.pem
@@ -41,4 +42,5 @@ desktop.ini
 
 node_modules/
 app/dist/
+artifacts/
 *.zip
