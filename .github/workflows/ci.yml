@@ -50,7 +50,7 @@ jobs:
         run: npm run test:container
 
       - name: Set up Trivy
-        uses: aquasecurity/setup-trivy@v0.3.1
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
         with:
           cache: true
           version: v0.71.2
@@ -59,14 +59,14 @@ jobs:
         run: bash scripts/scan-container-image.sh "${CI_IMAGE_REF}"
 
       - name: Upload container security reports
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: container-security-reports
           path: |
             artifacts/container-sbom.cdx.json
             artifacts/container-vulnerabilities.json
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 14
 
   terraform:

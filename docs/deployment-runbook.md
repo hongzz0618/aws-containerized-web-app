@@ -107,9 +107,9 @@ Set-Location ..
 
 ## CI Container Security Reports
 
-Before publishing an image, review the GitHub Actions run for the commit you plan to release. The CI app job builds one final local image, runs the container smoke test against that image, then generates reports from the same image. CI does not push to ECR and does not deploy AWS resources.
+Before publishing an image, review the GitHub Actions run for the commit you plan to release. The CI app job builds one final local image, runs the container smoke test against that image, then generates reports from the same image with Trivy `v0.71.2`. CI does not upload SARIF, push to ECR, or deploy AWS resources.
 
-Download the `container-security-reports` artifact from the workflow run. It contains:
+Download the 14-day `container-security-reports` artifact from the workflow run. It contains:
 
 - `container-sbom.cdx.json`: CycloneDX JSON SBOM for the final image.
 - `container-vulnerabilities.json`: Trivy JSON vulnerability report for OS and library findings in the final image.

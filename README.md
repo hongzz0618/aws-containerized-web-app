@@ -158,16 +158,16 @@ This repository includes a GitHub Actions CI workflow for local-style validation
 - Installs the sample app dependencies with `npm ci`
 - Typechecks, builds, and tests the TypeScript app
 - Builds the final sample app Docker image once and runs the container smoke test against that image
-- Generates a CycloneDX JSON SBOM from the same final image
+- Generates a CycloneDX JSON SBOM from the same final image with Trivy `v0.71.2`
 - Generates a Trivy JSON vulnerability report from the same final image and prints a human-readable summary in CI logs
 - Fails only when Trivy finds fixable CRITICAL vulnerabilities in the final image
-- Uploads the SBOM and vulnerability report as short-retention GitHub Actions artifacts
+- Uploads the SBOM and vulnerability report as 14-day GitHub Actions artifacts
 - Runs `terraform fmt -check -recursive`
 - Runs `terraform init -backend=false -input=false`
 - Runs `terraform validate -no-color`
 - Runs focused static Terraform and CI regression checks for autoscaling, deployment guardrails, alarm dimensions, scope controls, single-image scanning, artifact retention, and minimal workflow permissions
 
-The workflow validates the application, container build, container reports, and Terraform configuration. It does not authenticate to AWS, push to ECR, or deploy resources to AWS.
+The workflow validates the application, container build, container reports, and Terraform configuration. It does not upload SARIF, authenticate to AWS, push to ECR, or deploy resources to AWS.
 
 The vulnerability report keeps all reported severities for review. The initial gate is intentionally narrow: HIGH vulnerabilities are visible but do not block CI, unfixed CRITICAL vulnerabilities remain in the report but do not block the current gate, and fixable CRITICAL vulnerabilities fail the workflow. This is a starting policy for a reference project, not a claim that the image is free of risk or that the SBOM is a complete compliance inventory.
 

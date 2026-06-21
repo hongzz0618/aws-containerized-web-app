@@ -27,6 +27,7 @@ if ! docker image inspect "$image_ref" >/dev/null 2>&1; then
 fi
 
 mkdir -p "$artifact_dir"
+rm -f "$sbom_path" "$vuln_path"
 
 echo "Trivy version:"
 trivy --version
@@ -43,6 +44,7 @@ trivy image \
   --vuln-type os,library \
   --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
   --format json \
+  --exit-code 0 \
   --output "$vuln_path" \
   "$image_ref"
 
@@ -52,6 +54,7 @@ trivy image \
   --vuln-type os,library \
   --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
   --format table \
+  --exit-code 0 \
   "$image_ref"
 
 node - "$sbom_path" "$vuln_path" "$image_ref" <<'NODE'
