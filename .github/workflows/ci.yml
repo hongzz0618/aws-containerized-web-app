@@ -52,6 +52,11 @@ jobs:
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Set up Node.js for static checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
       - name: Check Terraform formatting
         run: terraform fmt -check -recursive
 
@@ -60,3 +65,6 @@ jobs:
 
       - name: Validate Terraform
         run: terraform validate -no-color
+
+      - name: Run Terraform static regression checks
+        run: node scripts/terraform-static-check.mjs

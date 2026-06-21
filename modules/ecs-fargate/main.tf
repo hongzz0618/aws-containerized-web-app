@@ -67,7 +67,9 @@ resource "aws_ecs_service" "this" {
   desired_count   = var.desired_count
   launch_type     = "FARGATE"
 
-  health_check_grace_period_seconds = var.health_check_grace_period_seconds
+  health_check_grace_period_seconds  = var.health_check_grace_period_seconds
+  deployment_minimum_healthy_percent = var.deployment_minimum_healthy_percent
+  deployment_maximum_percent         = var.deployment_maximum_percent
 
   deployment_circuit_breaker {
     enable   = true
@@ -84,6 +86,71 @@ resource "aws_ecs_service" "this" {
     target_group_arn = var.alb_target_group_arn
     container_name   = "app"
     container_port   = var.app_port
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+
+    precondition {
+      condition     = var.min_capacity <= var.desired_count && var.desired_count <= var.max_capacity
+      error_message = "desired_count must be within min_capacity and max_capacity."
+    }
+
+    precondition {
+      condition     = var.deployment_maximum_percent >= var.deployment_minimum_healthy_percent
+      error_message = "deployment_maximum_percent must be greater than or equal to deployment_minimum_healthy_percent."
+    }
+  }
+}
+
+resource "aws_appautoscaling_target" "ecs_service" {
+  max_capacity       = var.max_capacity
+  min_capacity       = var.min_capacity
+  resource_id        = "service/${aws_ecs_cluster.this.name}/${aws_ecs_service.this.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+
+  lifecycle {
+    precondition {
+      condition     = var.min_capacity <= var.max_capacity
+      error_message = "min_capacity must be less than or equal to max_capacity."
+    }
+  }
+}
+
+resource "aws_appautoscaling_policy" "cpu_target_tracking" {
+  name               = "${var.name_prefix}-cpu-target-tracking"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_service.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_service.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_service.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.autoscaling_cpu_target_value
+    scale_in_cooldown  = var.autoscaling_scale_in_cooldown
+    scale_out_cooldown = var.autoscaling_scale_out_cooldown
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+  }
+}
+
+resource "aws_appautoscaling_policy" "memory_target_tracking" {
+  name               = "${var.name_prefix}-memory-target-tracking"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.ecs_service.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_service.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.ecs_service.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.autoscaling_memory_target_value
+    scale_in_cooldown  = var.autoscaling_scale_in_cooldown
+    scale_out_cooldown = var.autoscaling_scale_out_cooldown
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
   }
 }
 
@@ -162,6 +229,38 @@ variable "health_check_grace_period_seconds" {
 }
 
 variable "desired_count" {
+  type = number
+}
+
+variable "min_capacity" {
+  type = number
+}
+
+variable "max_capacity" {
+  type = number
+}
+
+variable "autoscaling_cpu_target_value" {
+  type = number
+}
+
+variable "autoscaling_memory_target_value" {
+  type = number
+}
+
+variable "autoscaling_scale_out_cooldown" {
+  type = number
+}
+
+variable "autoscaling_scale_in_cooldown" {
+  type = number
+}
+
+variable "deployment_minimum_healthy_percent" {
+  type = number
+}
+
+variable "deployment_maximum_percent" {
   type = number
 }
 

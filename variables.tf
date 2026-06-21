@@ -72,3 +72,175 @@ variable "log_retention_days" {
   type        = number
   default     = 14
 }
+
+variable "service_desired_count" {
+  description = "Initial ECS service desired task count. Application Auto Scaling may adjust this value at runtime after creation."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.service_desired_count >= 1 && var.service_desired_count <= 10
+    error_message = "service_desired_count must be between 1 and 10."
+  }
+}
+
+variable "service_min_capacity" {
+  description = "Minimum ECS service task count enforced by Application Auto Scaling."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.service_min_capacity >= 1 && var.service_min_capacity <= 10
+    error_message = "service_min_capacity must be between 1 and 10."
+  }
+}
+
+variable "service_max_capacity" {
+  description = "Maximum ECS service task count allowed by Application Auto Scaling."
+  type        = number
+  default     = 3
+
+  validation {
+    condition     = var.service_max_capacity >= 1 && var.service_max_capacity <= 10
+    error_message = "service_max_capacity must be between 1 and 10."
+  }
+}
+
+variable "autoscaling_cpu_target_value" {
+  description = "Average ECS service CPU utilization percentage targeted by the CPU target tracking policy."
+  type        = number
+  default     = 65
+
+  validation {
+    condition     = var.autoscaling_cpu_target_value >= 40 && var.autoscaling_cpu_target_value <= 90
+    error_message = "autoscaling_cpu_target_value must be between 40 and 90."
+  }
+}
+
+variable "autoscaling_memory_target_value" {
+  description = "Average ECS service memory utilization percentage targeted by the memory target tracking policy."
+  type        = number
+  default     = 75
+
+  validation {
+    condition     = var.autoscaling_memory_target_value >= 40 && var.autoscaling_memory_target_value <= 90
+    error_message = "autoscaling_memory_target_value must be between 40 and 90."
+  }
+}
+
+variable "autoscaling_scale_out_cooldown_seconds" {
+  description = "Cooldown after an ECS service scale-out action."
+  type        = number
+  default     = 60
+
+  validation {
+    condition     = var.autoscaling_scale_out_cooldown_seconds >= 0 && var.autoscaling_scale_out_cooldown_seconds <= 900
+    error_message = "autoscaling_scale_out_cooldown_seconds must be between 0 and 900."
+  }
+}
+
+variable "autoscaling_scale_in_cooldown_seconds" {
+  description = "Cooldown after an ECS service scale-in action."
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.autoscaling_scale_in_cooldown_seconds >= 0 && var.autoscaling_scale_in_cooldown_seconds <= 1800
+    error_message = "autoscaling_scale_in_cooldown_seconds must be between 0 and 1800."
+  }
+}
+
+variable "deployment_minimum_healthy_percent" {
+  description = "Minimum healthy ECS service task percentage maintained during rolling deployments."
+  type        = number
+  default     = 100
+
+  validation {
+    condition     = var.deployment_minimum_healthy_percent >= 0 && var.deployment_minimum_healthy_percent <= 100
+    error_message = "deployment_minimum_healthy_percent must be between 0 and 100."
+  }
+}
+
+variable "deployment_maximum_percent" {
+  description = "Maximum ECS service task percentage allowed during rolling deployments."
+  type        = number
+  default     = 200
+
+  validation {
+    condition     = var.deployment_maximum_percent >= 100 && var.deployment_maximum_percent <= 400
+    error_message = "deployment_maximum_percent must be between 100 and 400."
+  }
+}
+
+variable "alarm_action_arns" {
+  description = "Optional action ARNs, such as existing SNS topic ARNs, invoked when runtime alarms enter ALARM state."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.alarm_action_arns : can(regex("^arn:aws[a-zA-Z-]*:[^\\s]+$", arn))
+    ])
+    error_message = "alarm_action_arns entries must be valid-looking AWS ARNs without whitespace."
+  }
+}
+
+variable "ok_action_arns" {
+  description = "Optional action ARNs, such as existing SNS topic ARNs, invoked when runtime alarms return to OK state."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = alltrue([
+      for arn in var.ok_action_arns : can(regex("^arn:aws[a-zA-Z-]*:[^\\s]+$", arn))
+    ])
+    error_message = "ok_action_arns entries must be valid-looking AWS ARNs without whitespace."
+  }
+}
+
+variable "target_5xx_alarm_threshold" {
+  description = "Target 5XX response count threshold over the alarm evaluation window."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.target_5xx_alarm_threshold >= 1 && var.target_5xx_alarm_threshold <= 1000
+    error_message = "target_5xx_alarm_threshold must be between 1 and 1000."
+  }
+}
+
+variable "ecs_cpu_saturation_alarm_threshold" {
+  description = "Average ECS service CPU utilization percentage treated as saturation above the autoscaling target."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.ecs_cpu_saturation_alarm_threshold >= 75 && var.ecs_cpu_saturation_alarm_threshold <= 100
+    error_message = "ecs_cpu_saturation_alarm_threshold must be between 75 and 100."
+  }
+}
+
+variable "ecs_memory_saturation_alarm_threshold" {
+  description = "Average ECS service memory utilization percentage treated as saturation above the autoscaling target."
+  type        = number
+  default     = 90
+
+  validation {
+    condition     = var.ecs_memory_saturation_alarm_threshold >= 75 && var.ecs_memory_saturation_alarm_threshold <= 100
+    error_message = "ecs_memory_saturation_alarm_threshold must be between 75 and 100."
+  }
+}
+
+check "service_capacity" {
+  assert {
+    condition     = var.service_min_capacity <= var.service_desired_count && var.service_desired_count <= var.service_max_capacity
+    error_message = "service_desired_count must be within service_min_capacity and service_max_capacity."
+  }
+}
+
+check "deployment_percentages" {
+  assert {
+    condition     = var.deployment_maximum_percent >= var.deployment_minimum_healthy_percent
+    error_message = "deployment_maximum_percent must be greater than or equal to deployment_minimum_healthy_percent."
+  }
+}

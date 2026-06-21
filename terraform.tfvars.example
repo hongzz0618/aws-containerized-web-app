@@ -5,3 +5,11 @@ environment  = "dev"
 # Replace this placeholder with the digest-pinned image URI published through the manual workflow.
 app_image_uri = "000000000000.dkr.ecr.eu-west-1.amazonaws.com/example-app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 app_port      = 3000
+
+service_desired_count = 1
+service_min_capacity  = 1
+service_max_capacity  = 3
+
+# Optional: provide existing SNS topic ARNs to receive alarm and recovery notifications.
+alarm_action_arns = []
+ok_action_arns    = []
