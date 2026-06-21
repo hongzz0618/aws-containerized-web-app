@@ -1,0 +1,240 @@
+name: Release Container Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_sha:
+        description: "Full 40-character commit SHA to publish from main."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: container-image-release
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Validate release request
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate release request
+        env:
+          CONFIRM_SHA: ${{ inputs.confirm_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Release workflow must run from refs/heads/main." >&2
+            exit 1
+          fi
+          if [[ ! "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GITHUB_SHA must be a full 40-character lowercase hex SHA." >&2
+            exit 1
+          fi
+          if [[ ! "${CONFIRM_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "confirm_sha must be a full 40-character lowercase hex SHA." >&2
+            exit 1
+          fi
+          if [[ "${CONFIRM_SHA}" != "${GITHUB_SHA}" ]]; then
+            echo "confirm_sha must exactly match GITHUB_SHA." >&2
+            exit 1
+          fi
+
+  release:
+    name: Release image to ECR
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: container-release
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_IMAGE_REF: aws-containerized-web-app:release-${{ github.sha }}
+      IMAGE_TAG: git-${{ github.sha }}
+
+    steps:
+
+      - name: Check out repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify checked out commit
+        run: |
+          set -euo pipefail
+          checked_out_sha="$(git rev-parse HEAD)"
+          if [[ "${checked_out_sha}" != "${GITHUB_SHA}" ]]; then
+            echo "Checked out ${checked_out_sha}, expected ${GITHUB_SHA}." >&2
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "24"
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Typecheck app
+        working-directory: app
+        run: npm run typecheck
+
+      - name: Test app
+        working-directory: app
+        run: npm test
+
+      - name: Build app
+        working-directory: app
+        run: npm run build
+
+      - name: Audit runtime dependencies
+        working-directory: app
+        run: npm audit --omit=dev
+
+      - name: Build final container image
+        run: docker build --file app/Dockerfile --tag "${RELEASE_IMAGE_REF}" app
+
+      - name: Run container smoke test
+        working-directory: app
+        env:
+          CONTAINER_SMOKE_IMAGE: ${{ env.RELEASE_IMAGE_REF }}
+          CONTAINER_SMOKE_SKIP_BUILD: "true"
+        run: npm run test:container
+
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+        with:
+          cache: true
+          version: v0.71.2
+
+      - name: Generate container SBOM and vulnerability report
+        run: bash scripts/scan-container-image.sh "${RELEASE_IMAGE_REF}"
+
+      - name: Upload container security reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-container-security-reports
+          path: |
+            artifacts/container-sbom.cdx.json
+            artifacts/container-vulnerabilities.json
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Validate AWS release configuration
+        env:
+          AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+          AWS_ECR_RELEASE_ROLE_ARN: ${{ vars.AWS_ECR_RELEASE_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECR_REPOSITORY_NAME: ${{ vars.ECR_REPOSITORY_NAME }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${AWS_ACCOUNT_ID}" =~ ^[0-9]{12}$ ]]; then
+            echo "AWS_ACCOUNT_ID repository/environment variable must be a 12-digit account ID." >&2
+            exit 1
+          fi
+          if [[ ! "${AWS_REGION}" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]$ ]]; then
+            echo "AWS_REGION repository/environment variable has an unexpected format." >&2
+            exit 1
+          fi
+          if [[ ! "${AWS_ECR_RELEASE_ROLE_ARN}" =~ ^arn:aws[a-zA-Z-]*:iam::${AWS_ACCOUNT_ID}:role/.+ ]]; then
+            echo "AWS_ECR_RELEASE_ROLE_ARN must be an IAM role ARN in AWS_ACCOUNT_ID." >&2
+            exit 1
+          fi
+          if [[ ! "${ECR_REPOSITORY_NAME}" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]]; then
+            echo "ECR_REPOSITORY_NAME repository/environment variable has an unexpected format." >&2
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ECR_RELEASE_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: ecr-release-${{ github.run_id }}
+          role-duration-seconds: 1800
+          allowed-account-ids: ${{ vars.AWS_ACCOUNT_ID }}
+          mask-aws-account-id: true
+
+      - name: Log in to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@d539f0932e70871a027e9d5a9d8fc38589180a64 # v2.1.6
+        with:
+          mask-password: true
+
+      - name: Fail if immutable tag already exists
+        env:
+          ECR_REPOSITORY_NAME: ${{ vars.ECR_REPOSITORY_NAME }}
+        run: |
+          set -euo pipefail
+          set +e
+          existing_digest="$(aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --image-ids imageTag="${IMAGE_TAG}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text 2>&1)"
+          describe_status=$?
+          set -e
+          if [[ "${describe_status}" -ne 0 ]]; then
+            if [[ "${existing_digest}" == *"ImageNotFoundException"* ]]; then
+              echo "Image tag ${IMAGE_TAG} does not exist yet; continuing."
+              exit 0
+            fi
+            echo "Unable to check existing ECR image tag:" >&2
+            echo "${existing_digest}" >&2
+            exit "${describe_status}"
+          fi
+          if [[ "${existing_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Image tag ${IMAGE_TAG} already exists with digest ${existing_digest}; refusing duplicate release." >&2
+            exit 1
+          fi
+          if [[ -n "${existing_digest}" && "${existing_digest}" != "None" ]]; then
+            echo "Unexpected existing digest response for ${IMAGE_TAG}: ${existing_digest}" >&2
+            exit 1
+          fi
+
+      - name: Tag and push image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY_NAME: ${{ vars.ECR_REPOSITORY_NAME }}
+        run: |
+          set -euo pipefail
+          remote_image="${ECR_REGISTRY}/${ECR_REPOSITORY_NAME}:${IMAGE_TAG}"
+          docker image inspect "${RELEASE_IMAGE_REF}" >/dev/null
+          docker tag "${RELEASE_IMAGE_REF}" "${remote_image}"
+          docker push "${remote_image}"
+
+      - name: Resolve remote digest
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY_NAME: ${{ vars.ECR_REPOSITORY_NAME }}
+        run: |
+          set -euo pipefail
+          remote_digest="$(aws ecr describe-images \
+            --repository-name "${ECR_REPOSITORY_NAME}" \
+            --image-ids imageTag="${IMAGE_TAG}" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          if [[ ! "${remote_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Remote image digest was missing or malformed: ${remote_digest}" >&2
+            exit 1
+          fi
+          repository_url="${ECR_REGISTRY}/${ECR_REPOSITORY_NAME}"
+          digest_uri="${repository_url}@${remote_digest}"
+          {
+            echo "## Container Image Release"
+            echo ""
+            echo "- Source commit: \`${GITHUB_SHA}\`"
+            echo "- Immutable image tag: \`${IMAGE_TAG}\`"
+            echo "- ECR repository: \`${ECR_REPOSITORY_NAME}\`"
+            echo "- Remote digest: \`${remote_digest}\`"
+            echo "- Digest URI: \`${digest_uri}\`"
+            echo "- SBOM and vulnerability gate: passed before publication"
+            echo "- Image published only; ECS was not updated."
+          } >> "${GITHUB_STEP_SUMMARY}"

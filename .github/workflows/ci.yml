@@ -99,3 +99,6 @@ jobs:
 
       - name: Run CI static regression checks
         run: node scripts/ci-static-check.mjs
+
+      - name: Run release static regression checks
+        run: node scripts/release-static-check.mjs
