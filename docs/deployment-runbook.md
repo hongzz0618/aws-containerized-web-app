@@ -209,6 +209,8 @@ Confirm:
 
 Autoscaling can change ECS desired count at runtime. Terraform intentionally ignores only `desired_count` drift on the ECS service so a later `terraform apply` does not reset capacity that Application Auto Scaling selected.
 
+Either CPU or memory target tracking can request scale-out. Scale-in is conservative and only proceeds when the target tracking policies agree capacity can be reduced. During ECS deployments, target tracking scale-in is suspended while scale-out can still occur, subject to `service_max_capacity`.
+
 ## Controlled Scale-Out Validation
 
 Do not use production traffic to validate autoscaling. Use a short, controlled test window in a sandbox account:
@@ -249,7 +251,7 @@ Alarms only send notifications when `alarm_action_arns` or `ok_action_arns` are 
 
 - Default steady state is one Fargate task.
 - Autoscaling can increase service capacity up to `service_max_capacity`.
-- Rolling deployment with `100/200` percentages can temporarily run an extra replacement task for a single-task service.
+- Rolling deployment with `100/200` percentages can temporarily double the current desired count. For the default single-task service that means up to two tasks; if autoscaling has already raised desired count to three, deployment can temporarily allow more replacement capacity.
 - The existing NAT gateway can remain the main fixed cost while the stack is deployed.
 - CloudWatch alarms have low standing cost, but they are not free.
 

@@ -30,7 +30,7 @@ Two target tracking policies are configured:
 - CPU: `ECSServiceAverageCPUUtilization` at 65%
 - Memory: `ECSServiceAverageMemoryUtilization` at 75%
 
-Both policies can request scale-out. Application Auto Scaling uses the resulting capacity recommendations within the configured min/max range; it does not exceed `service_max_capacity`.
+Either policy can request scale-out. Scale-in is conservative and only occurs when the target tracking policies agree that capacity can be reduced. During ECS deployments, target tracking scale-in is suspended while scale-out can still occur. Application Auto Scaling uses the resulting capacity recommendations within the configured min/max range; it does not exceed `service_max_capacity`.
 
 CPU and memory are both used because this service could saturate on either compute or memory pressure. Request-count scaling is not configured because the current app has no measured traffic model, no per-request work profile, and no baseline request-per-task target.
 
@@ -38,7 +38,7 @@ Scale-out cooldown is 60 seconds and scale-in cooldown is 300 seconds. Scale-out
 
 ## Terraform Desired Count Drift
 
-The ECS service still has an explicit `desired_count` for initial creation. After creation, Application Auto Scaling can change desired count at runtime.
+The ECS service still has an explicit `desired_count` for initial creation. The `service_desired_count` variable seeds the ECS service when it is created. After creation, Application Auto Scaling can change desired count at runtime.
 
 The service uses:
 
@@ -87,7 +87,7 @@ This wave does not create SNS topics or subscriptions. That avoids hardcoded ema
 
 ## Cost Impact
 
-Steady-state capacity is one Fargate task by default. Autoscaling can increase capacity up to three tasks. Rolling deployment can temporarily run an additional replacement task within the deployment maximum percentage.
+Steady-state capacity is one Fargate task by default. Autoscaling can increase capacity up to three tasks. Rolling deployment can temporarily run replacement tasks within the deployment maximum percentage. With the default desired count of one this can mean two running tasks during deployment; if runtime desired count has already scaled out, the temporary deployment ceiling is based on that higher desired count.
 
 CloudWatch alarms add a small standing cost. No new NAT gateways, databases, storage systems, dashboards, or edge services are added.
 

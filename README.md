@@ -169,7 +169,7 @@ The workflow validates the application, container build, and Terraform configura
 terraform destroy
 ```
 
-Review the destroy plan before confirming. Load balancers, NAT gateways, Fargate tasks, and CloudWatch resources can continue to create cost if left behind. Autoscaling can increase the service up to `service_max_capacity`, and rolling deployment can temporarily run an extra replacement task with the default deployment percentages.
+Review the destroy plan before confirming. Load balancers, NAT gateways, Fargate tasks, and CloudWatch resources can continue to create cost if left behind. Autoscaling can increase the service up to `service_max_capacity`, and rolling deployment can temporarily run replacement tasks up to the configured deployment maximum percentage.
 
 The ECR repository uses `force_delete = false`. Terraform cannot destroy a non-empty repository while this setting remains false; remove images intentionally before complete cleanup. This protects stored images from accidental deletion.
 
@@ -199,6 +199,8 @@ Destroy the stack after testing if you do not need it running.
 
 - ECS target tracking uses CPU at 65% and memory at 75%.
 - Scale-out cooldown is shorter than scale-in cooldown so capacity can respond faster to pressure and remove capacity more slowly after bursts.
+- Either CPU or memory target tracking can request scale-out. Scale-in is conservative and only proceeds when the target tracking policies agree capacity can be reduced.
+- During ECS deployments, target tracking scale-in is suspended while scale-out can still occur. `service_max_capacity` remains the hard autoscaling limit.
 - Runtime alarms are created even when notification actions are empty.
 - To send notifications, pass existing action ARNs through `alarm_action_arns` and `ok_action_arns`.
 - Empty action lists mean alarms are visible in CloudWatch but do not send notifications.

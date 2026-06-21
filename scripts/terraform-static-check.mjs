@@ -47,6 +47,7 @@ assertIncludes(ecs, "min_capacity       = var.min_capacity", "autoscaling min ca
 assertIncludes(ecs, "max_capacity       = var.max_capacity", "autoscaling max capacity");
 assertIncludes(ecs, '"ECSServiceAverageCPUUtilization"', "CPU target tracking policy");
 assertIncludes(ecs, '"ECSServiceAverageMemoryUtilization"', "memory target tracking policy");
+assert(!ecs.includes("disable_scale_in"), "target tracking scale-in must not be disabled");
 assertIncludes(ecs, "ignore_changes = [desired_count]", "desired count drift protection");
 assert(!ecs.includes("ignore_changes = all"), "ECS service must not ignore all Terraform drift");
 
@@ -86,6 +87,8 @@ assertIncludes(observability, "ok_actions          = var.ok_action_arns", "optio
 assert(!observability.includes("insufficient_data_actions"), "alarms should not send insufficient-data notifications by default");
 
 const forbiddenResources = [
+  "aws_sns_topic",
+  "aws_sns_topic_subscription",
   "aws_wafv2_web_acl",
   "aws_cloudfront_distribution",
   "aws_route53_record",
@@ -103,5 +106,6 @@ for (const resource of forbiddenResources) {
 }
 
 assert(!/Resource\s*=\s*"\*"/.test(terraform), "Terraform must not add IAM Resource wildcard policies");
+assert(!/resources\s*=\s*\[\s*"\*"\s*\]/i.test(terraform), "Terraform must not add IAM resources wildcard policies");
 
 console.log("Terraform static regression checks passed.");
