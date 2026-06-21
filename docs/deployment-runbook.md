@@ -31,6 +31,8 @@ Use the provider ARN as `github_oidc_provider_arn`. It has this shape:
 arn:aws:iam::<account-id>:oidc-provider/token.actions.githubusercontent.com
 ```
 
+When the release role is enabled, Terraform checks that this ARN uses the current AWS partition and caller account ID. A provider from another account, another partition, or any issuer other than `token.actions.githubusercontent.com` is rejected.
+
 ## Terraform Release Role Configuration
 
 The optional release role is disabled by default. To create it, set:
@@ -74,8 +76,9 @@ container-release
 Configure it before running the workflow:
 
 - Deployment branches: allow only `main`.
-- Required reviewers: enable if the current GitHub plan supports it. In a solo repository, the owner can be the reviewer.
-- Prevent self-review: leave disabled unless another reviewer is available.
+- Required reviewers: enable if the current GitHub plan supports it.
+- Solo repositories: verify the plan and environment settings allow the intended reviewer to approve the run.
+- Prevent self-review: leave disabled unless another reviewer is available. If enabled, the workflow actor cannot approve their own run.
 - Admin bypass: disable or restrict it according to how tightly this repository should enforce approvals.
 - Variables: add environment or repository variables, not AWS long-lived secrets.
 
@@ -128,6 +131,18 @@ query and validate the remote digest
 ```
 
 The workflow summary includes the source commit, immutable tag, ECR repository, remote digest, digest URI, scan status, and the note that ECS was not updated.
+
+IAM action mapping:
+
+| Workflow command | Required IAM action |
+| --- | --- |
+| ECR login action | `ecr:GetAuthorizationToken` |
+| Docker push layer checks | `ecr:BatchCheckLayerAvailability` |
+| Docker layer upload | `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload` |
+| Docker manifest push | `ecr:PutImage` |
+| Duplicate tag check and remote digest lookup | `ecr:DescribeImages` |
+
+The workflow does not run `aws ecr batch-get-image`, pull a remote manifest, or retag a remote manifest, so `ecr:BatchGetImage` is intentionally not granted.
 
 ## Duplicate Releases
 

@@ -57,6 +57,19 @@ jobs:
       IMAGE_TAG: git-${{ github.sha }}
 
     steps:
+      - name: Revalidate release context
+        env:
+          CONFIRM_SHA: ${{ inputs.confirm_sha }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Release job must run from refs/heads/main." >&2
+            exit 1
+          fi
+          if [[ ! "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ || "${CONFIRM_SHA}" != "${GITHUB_SHA}" ]]; then
+            echo "Release job SHA context does not match the confirmed SHA." >&2
+            exit 1
+          fi
 
       - name: Check out repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -216,11 +229,28 @@ jobs:
           ECR_REPOSITORY_NAME: ${{ vars.ECR_REPOSITORY_NAME }}
         run: |
           set -euo pipefail
-          remote_digest="$(aws ecr describe-images \
-            --repository-name "${ECR_REPOSITORY_NAME}" \
-            --image-ids imageTag="${IMAGE_TAG}" \
-            --query 'imageDetails[0].imageDigest' \
-            --output text)"
+          remote_digest=""
+          for attempt in 1 2 3 4 5; do
+            set +e
+            describe_output="$(aws ecr describe-images \
+              --repository-name "${ECR_REPOSITORY_NAME}" \
+              --image-ids imageTag="${IMAGE_TAG}" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text 2>&1)"
+            describe_status=$?
+            set -e
+            if [[ "${describe_status}" -eq 0 ]]; then
+              remote_digest="${describe_output}"
+              break
+            fi
+            if [[ "${describe_output}" == *"ImageNotFoundException"* && "${attempt}" -lt 5 ]]; then
+              sleep "$((attempt * 2))"
+              continue
+            fi
+            echo "Unable to resolve remote image digest:" >&2
+            echo "${describe_output}" >&2
+            exit "${describe_status}"
+          done
           if [[ ! "${remote_digest}" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "Remote image digest was missing or malformed: ${remote_digest}" >&2
             exit 1

@@ -87,6 +87,8 @@ assertIncludes(observability, "ok_actions          = var.ok_action_arns", "optio
 assert(!observability.includes("insufficient_data_actions"), "alarms should not send insufficient-data notifications by default");
 
 const releaseIam = read("release-iam.tf");
+assertIncludes(releaseIam, 'data "aws_caller_identity" "current"', "current AWS account data source");
+assertIncludes(releaseIam, 'data "aws_partition" "current"', "current AWS partition data source");
 assertIncludes(releaseIam, 'count = var.enable_github_ecr_release_role ? 1 : 0', "release role feature flag");
 assertIncludes(releaseIam, 'actions = ["sts:AssumeRoleWithWebIdentity"]', "GitHub OIDC trust action");
 assertIncludes(releaseIam, 'type        = "Federated"', "GitHub OIDC federated principal");
@@ -97,15 +99,19 @@ assertIncludes(releaseIam, 'repo:${trimspace(var.github_repository)}:environment
 assert(!releaseIam.includes("StringLike"), "GitHub OIDC trust must not use wildcard subject matching");
 assert(!releaseIam.includes("sts:AssumeRole\""), "release role must not allow ordinary sts:AssumeRole");
 assertIncludes(releaseIam, "max_session_duration = 3600", "release role max session duration uses the AWS minimum");
+assertIncludes(releaseIam, "github_oidc_provider_arn must be the token.actions.githubusercontent.com provider in the current AWS account and partition.", "same-account OIDC provider precondition");
 assertIncludes(releaseIam, "resources = [module.ecr.repository_arn]", "release policy single ECR repository scope");
 assertIncludes(releaseIam, 'actions   = ["ecr:GetAuthorizationToken"]', "ECR auth token permission");
 assertIncludes(releaseIam, 'resources = ["*"]', "ECR auth token wildcard resource");
 assert(!releaseIam.includes("ecr:*"), "release policy must not allow ecr:*");
+assert(!releaseIam.includes("ecr:BatchGetImage"), "release policy must not include unused ECR BatchGetImage permission");
 assert(!releaseIam.includes("ecs:"), "release policy must not include ECS permissions");
-assert(!releaseIam.includes("iam:"), "release policy must not include IAM write permissions");
+assert(!releaseIam.includes('"iam:'), "release policy must not include IAM write permissions");
 assert(!releaseIam.includes("s3:"), "release policy must not include S3 permissions");
 assert(!releaseIam.includes("cloudwatch:"), "release policy must not include CloudWatch write permissions");
 assertIncludes(variables, 'default     = "container-release"', "default release environment");
+assertIncludes(variables, "\\.git$", "GitHub repository validation rejects .git suffixes");
+assertIncludes(variables, "extra slashes", "GitHub repository validation rejects extra slashes");
 assertIncludes(variables, 'check "github_ecr_release_role"', "release role variable relationship check");
 assertIncludes(main, 'output "github_ecr_release_role_arn"', "release role output");
 assertIncludes(main, "try(aws_iam_role.github_ecr_release[0].arn, null)", "safe release role output when disabled");

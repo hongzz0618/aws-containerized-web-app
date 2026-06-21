@@ -63,6 +63,11 @@ assertIncludes(validateRequest, 'CONFIRM_SHA: ${{ inputs.confirm_sha }}', "confi
 assertMatches(validateRequest, /\^\[0-9a-f\]\{40\}\$/, "full SHA validation");
 assertIncludes(validateRequest, '"${CONFIRM_SHA}" != "${GITHUB_SHA}"', "confirm SHA equality guard");
 
+const revalidateContext = stepBlock("Revalidate release context");
+assertIncludes(revalidateContext, '"refs/heads/main"', "release job main branch guard");
+assertIncludes(revalidateContext, 'CONFIRM_SHA: ${{ inputs.confirm_sha }}', "release job confirm SHA environment");
+assertIncludes(revalidateContext, '"${CONFIRM_SHA}" != "${GITHUB_SHA}"', "release job confirm SHA equality guard");
+
 const checkoutStep = stepBlock("Check out repository");
 const actionPins = new Map([
   ["actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1", "checkout action"],
@@ -129,6 +134,7 @@ assertIncludes(configureAwsStep, "mask-aws-account-id: true", "account ID maskin
 
 const order = [
   "Validate release request",
+  "Revalidate release context",
   "Check out repository",
   "Install app dependencies",
   "Build final container image",
@@ -154,6 +160,9 @@ assertIncludes(duplicateStep, "refusing duplicate release", "duplicate tag fail-
 
 const digestStep = stepBlock("Resolve remote digest");
 assertIncludes(digestStep, "aws ecr describe-images", "remote digest lookup");
+assertIncludes(digestStep, "for attempt in 1 2 3 4 5", "bounded remote digest retry");
+assertIncludes(digestStep, "ImageNotFoundException", "remote digest retry only handles not-found");
+assertIncludes(digestStep, "sleep \"$((attempt * 2))\"", "remote digest retry backoff");
 assertMatches(digestStep, /\^sha256:\[0-9a-f\]\{64\}\$/, "remote digest validation");
 assertIncludes(digestStep, "Image published only; ECS was not updated.", "no deployment summary");
 
@@ -167,6 +176,7 @@ for (const forbidden of [
   "terraform plan",
   "terraform destroy",
   "aws ecs",
+  "aws ecr batch-get-image",
   "update-service",
   "register-task-definition",
   "gh release",
@@ -190,10 +200,12 @@ assertNotIncludes(releaseIam, "repo:*", "OIDC trust wildcard");
 assertNotIncludes(releaseIam, "repo:owner/*", "OIDC trust wildcard");
 assertNotIncludes(releaseIam, "repo:owner/repo:*", "OIDC trust wildcard");
 assertIncludes(releaseIam, "max_session_duration = 3600", "role max session duration uses the AWS minimum");
+assertIncludes(releaseIam, 'data "aws_caller_identity" "current"', "current AWS account data source");
+assertIncludes(releaseIam, 'data "aws_partition" "current"', "current AWS partition data source");
+assertIncludes(releaseIam, "github_oidc_provider_arn must be the token.actions.githubusercontent.com provider in the current AWS account and partition.", "same-account OIDC provider precondition");
 
 for (const action of [
   "ecr:BatchCheckLayerAvailability",
-  "ecr:BatchGetImage",
   "ecr:CompleteLayerUpload",
   "ecr:DescribeImages",
   "ecr:InitiateLayerUpload",
@@ -208,7 +220,8 @@ assertMatches(
   /actions\s+=\s+\["ecr:GetAuthorizationToken"\]\s+resources\s+=\s+\["\*"\]/,
   "ECR authorization token wildcard"
 );
-for (const forbidden of ["ecr:*", "ecs:", "iam:", "s3:", "cloudwatch:", "DeleteRepository", "DeleteLifecyclePolicy", "BatchDeleteImage"]) {
+assertNotIncludes(releaseIam, "ecr:BatchGetImage", "unused ECR permission");
+for (const forbidden of ["ecr:*", "ecs:", '"iam:', "s3:", "cloudwatch:", "DeleteRepository", "DeleteLifecyclePolicy", "BatchDeleteImage"]) {
   assertNotIncludes(releaseIam, forbidden, "release IAM policy");
 }
 

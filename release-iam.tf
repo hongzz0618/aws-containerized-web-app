@@ -1,3 +1,7 @@
+data "aws_caller_identity" "current" {}
+
+data "aws_partition" "current" {}
+
 data "aws_iam_policy_document" "github_ecr_release_assume" {
   count = var.enable_github_ecr_release_role ? 1 : 0
 
@@ -34,6 +38,13 @@ resource "aws_iam_role" "github_ecr_release" {
   tags = {
     Project = local.name_prefix
   }
+
+  lifecycle {
+    precondition {
+      condition     = trimspace(var.github_oidc_provider_arn) == "arn:${data.aws_partition.current.partition}:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
+      error_message = "github_oidc_provider_arn must be the token.actions.githubusercontent.com provider in the current AWS account and partition."
+    }
+  }
 }
 
 data "aws_iam_policy_document" "github_ecr_release" {
@@ -43,7 +54,6 @@ data "aws_iam_policy_document" "github_ecr_release" {
     sid = "PushAndReadSingleRepository"
     actions = [
       "ecr:BatchCheckLayerAvailability",
-      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:DescribeImages",
       "ecr:InitiateLayerUpload",

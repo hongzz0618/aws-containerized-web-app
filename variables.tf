@@ -259,9 +259,12 @@ variable "github_repository" {
   validation {
     condition = (
       trimspace(var.github_repository) == "" ||
-      can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", trimspace(var.github_repository)))
+      (
+        can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", trimspace(var.github_repository))) &&
+        !can(regex("(^https?://|\\.git$|\\s|//)", trimspace(var.github_repository)))
+      )
     )
-    error_message = "github_repository must be empty or use owner/repository format."
+    error_message = "github_repository must be empty or use owner/repository format without a URL scheme, .git suffix, whitespace, or extra slashes."
   }
 }
 
