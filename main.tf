@@ -124,6 +124,11 @@ output "ecr_repository_arn" {
   value       = module.ecr.repository_arn
 }
 
+output "github_ecr_release_role_arn" {
+  description = "ARN of the optional GitHub OIDC role for manual ECR image releases. Null when disabled."
+  value       = try(aws_iam_role.github_ecr_release[0].arn, null)
+}
+
 output "runtime_alarm_names" {
   description = "CloudWatch alarm names for ALB target health and ECS service saturation signals."
   value       = module.observability.alarm_names

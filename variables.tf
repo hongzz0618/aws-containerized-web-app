@@ -231,6 +231,54 @@ variable "ecs_memory_saturation_alarm_threshold" {
   }
 }
 
+variable "enable_github_ecr_release_role" {
+  description = "Whether to create the GitHub OIDC IAM role used only for manual ECR image releases."
+  type        = bool
+  default     = false
+}
+
+variable "github_oidc_provider_arn" {
+  description = "Existing account-level GitHub Actions OIDC provider ARN. Required when enable_github_ecr_release_role is true."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      trimspace(var.github_oidc_provider_arn) == "" ||
+      can(regex("^arn:aws[a-zA-Z-]*:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$", trimspace(var.github_oidc_provider_arn)))
+    )
+    error_message = "github_oidc_provider_arn must be empty or an ARN for the token.actions.githubusercontent.com IAM OIDC provider."
+  }
+}
+
+variable "github_repository" {
+  description = "GitHub repository allowed to assume the manual ECR release role, formatted as owner/repository."
+  type        = string
+  default     = "hongzz0618/aws-containerized-web-app"
+
+  validation {
+    condition = (
+      trimspace(var.github_repository) == "" ||
+      can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", trimspace(var.github_repository)))
+    )
+    error_message = "github_repository must be empty or use owner/repository format."
+  }
+}
+
+variable "github_release_environment" {
+  description = "GitHub Environment name bound into the OIDC trust subject for manual ECR releases."
+  type        = string
+  default     = "container-release"
+
+  validation {
+    condition = (
+      trimspace(var.github_release_environment) == "" ||
+      can(regex("^[A-Za-z0-9_.-]+$", trimspace(var.github_release_environment)))
+    )
+    error_message = "github_release_environment must be empty or contain only letters, numbers, dots, underscores, or hyphens."
+  }
+}
+
 check "service_capacity" {
   assert {
     condition     = var.service_min_capacity <= var.service_desired_count && var.service_desired_count <= var.service_max_capacity
@@ -242,5 +290,19 @@ check "deployment_percentages" {
   assert {
     condition     = var.deployment_maximum_percent >= var.deployment_minimum_healthy_percent
     error_message = "deployment_maximum_percent must be greater than or equal to deployment_minimum_healthy_percent."
+  }
+}
+
+check "github_ecr_release_role" {
+  assert {
+    condition = (
+      !var.enable_github_ecr_release_role ||
+      (
+        trimspace(var.github_oidc_provider_arn) != "" &&
+        trimspace(var.github_repository) != "" &&
+        trimspace(var.github_release_environment) != ""
+      )
+    )
+    error_message = "When enable_github_ecr_release_role is true, github_oidc_provider_arn, github_repository, and github_release_environment must be set."
   }
 }
