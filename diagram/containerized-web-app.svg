@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
   <title id="title">AWS containerized web application architecture</title>
-  <desc id="desc">A client sends HTTP port 80 traffic to an internet-facing Application Load Balancer in public subnets. The load balancer forwards through a target group on port 3000 to an ECS Service running AWS Fargate task containers in private subnets, with health checks on /health. The service sends logs to CloudWatch Logs and uses a NAT Gateway for outbound access.</desc>
+  <desc id="desc">A client sends HTTP port 80 traffic to an internet-facing Application Load Balancer in public subnets. The load balancer forwards through a target group on port 3000 to an ECS Service running AWS Fargate task containers in private subnets, with health checks on /health. Application Auto Scaling adjusts service desired count, CloudWatch alarms watch ALB and ECS metrics, and the service sends logs to CloudWatch Logs.</desc>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
       <path d="M 0 0 L 10 5 L 0 10 z" fill="#263445"/>
@@ -60,8 +60,17 @@
   <text x="872.5" y="662" text-anchor="middle" class="label detail" font-weight="700">Node.js application</text>
   <text x="872.5" y="683" text-anchor="middle" class="label detail muted">Port 3000</text>
 
-  <rect x="1340" y="360" width="170" height="92" rx="9" fill="#fff8e6" stroke="#b7791f" stroke-width="1.6"/>
-  <text x="1425" y="413" text-anchor="middle" class="label subservice">CloudWatch Logs</text>
+  <rect x="1328" y="230" width="195" height="82" rx="9" fill="#eef7ff" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="1425.5" y="264" text-anchor="middle" class="label subservice">Application</text>
+  <text x="1425.5" y="288" text-anchor="middle" class="label subservice">Auto Scaling</text>
+
+  <rect x="1328" y="360" width="195" height="82" rx="9" fill="#fff8e6" stroke="#b7791f" stroke-width="1.6"/>
+  <text x="1425.5" y="394" text-anchor="middle" class="label subservice">CloudWatch</text>
+  <text x="1425.5" y="418" text-anchor="middle" class="label subservice">Alarms</text>
+
+  <rect x="1328" y="490" width="195" height="82" rx="9" fill="#fff8e6" stroke="#b7791f" stroke-width="1.6"/>
+  <text x="1425.5" y="524" text-anchor="middle" class="label subservice">CloudWatch</text>
+  <text x="1425.5" y="548" text-anchor="middle" class="label subservice">Logs</text>
 
   <rect x="50" y="292" width="145" height="74" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.6"/>
   <text x="122.5" y="336" text-anchor="middle" class="label subservice">Client</text>
@@ -76,5 +85,8 @@
   <text x="840" y="495" text-anchor="middle" class="label detail" font-weight="700">Health check: /health</text>
 
   <path d="M 990 540 L 1075 360" class="secondary"/>
-  <path d="M 1075 632 L 1340 406" class="secondary"/>
+  <path d="M 1075 632 L 1328 531" class="secondary"/>
+  <path d="M 1328 271 L 1075 582" class="secondary"/>
+  <path d="M 860 329 H 1328 V 401" class="secondary"/>
+  <path d="M 1075 632 H 1240 V 401 H 1328" class="secondary"/>
 </svg>

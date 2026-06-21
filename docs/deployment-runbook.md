@@ -180,6 +180,79 @@ terraform apply
 
 Do not use `:latest`. A digest-pinned image reference makes the ECS task definition resolve to the exact image that was reviewed and pushed.
 
+## Autoscaling Verification
+
+After a controlled deployment, verify the ECS service scaling configuration before running any load test:
+
+```bash
+aws application-autoscaling describe-scalable-targets \
+  --service-namespace ecs \
+  --resource-ids "service/<cluster-name>/<service-name>"
+
+aws application-autoscaling describe-scaling-policies \
+  --service-namespace ecs \
+  --resource-id "service/<cluster-name>/<service-name>"
+
+aws ecs describe-services \
+  --cluster "<cluster-name>" \
+  --services "<service-name>" \
+  --query 'services[0].{desired:desiredCount,running:runningCount,pending:pendingCount,events:events[0:5]}'
+```
+
+Confirm:
+
+- the scalable target uses the expected `MinCapacity` and `MaxCapacity`
+- CPU and memory target tracking policies exist
+- desired, running, and pending task counts are reasonable
+- recent ECS service events do not show repeated placement, health check, or rollback failures
+- scaling activity history matches any expected capacity changes
+
+Autoscaling can change ECS desired count at runtime. Terraform intentionally ignores only `desired_count` drift on the ECS service so a later `terraform apply` does not reset capacity that Application Auto Scaling selected.
+
+## Controlled Scale-Out Validation
+
+Do not use production traffic to validate autoscaling. Use a short, controlled test window in a sandbox account:
+
+- record current desired, running, and pending task counts
+- generate CPU or memory pressure against the test service for a short duration
+- watch scaling activities and ECS service events
+- stop the load source explicitly
+- verify scale-out happens within `service_max_capacity`
+- verify scale-in after the longer cooldown and when utilization drops
+
+Keep the test small. The default maximum is three tasks, but any increase still creates Fargate runtime cost.
+
+## Deployment Failure Diagnosis
+
+If a deployment fails or rolls back, check in this order:
+
+1. ECS service events for deployment circuit breaker messages, task launch failures, and target registration failures.
+2. Stopped task reason and container exit code for the failed task definition revision.
+3. ALB target health reason for the target group.
+4. CloudWatch Logs for startup errors, shutdown signal handling, and forced shutdown messages.
+5. The previous task definition revision and image digest.
+
+Circuit breaker rollback should move the service back to the last stable task set when ECS cannot reach steady state. If the new task starts but later returns application errors, use the target 5XX alarm and logs to decide whether to roll back the image digest.
+
+## Alarm Diagnosis
+
+| Alarm | Meaning | First checks | Deployment noise | Response |
+| --- | --- | --- | --- | --- |
+| ALB unhealthy targets | One or more registered ECS targets stayed unhealthy for the evaluation window | Target health reason, ECS service events, container startup logs, `/health` behavior | A brief transition can occur while replacement tasks register; sustained ALARM is not expected | Roll back if new tasks cannot pass health checks |
+| ALB target 5XX | The application container returned repeated 5XX responses through the ALB | App logs, recent image digest, request path, container errors | Low traffic should not create data; a short burst may clear if caused by startup timing | Roll back if tied to a new revision and errors continue |
+| ECS CPU saturation | Average service CPU stayed well above the autoscaling target | Scaling activity, desired count versus max capacity, request pattern | Normal scale-out may briefly raise utilization before new tasks are ready | Observe if scale-out catches up; raise capacity only after cost review |
+| ECS memory saturation | Average service memory stayed well above the autoscaling target | Container memory usage, restart events, logs, desired count versus max capacity | Startup memory spikes can settle; sustained ALARM needs investigation | Roll back if tied to a memory regression |
+
+Alarms only send notifications when `alarm_action_arns` or `ok_action_arns` are configured with existing action ARNs. Empty action lists still create alarms for console and metric inspection but do not send notifications.
+
+## Cost Notes
+
+- Default steady state is one Fargate task.
+- Autoscaling can increase service capacity up to `service_max_capacity`.
+- Rolling deployment with `100/200` percentages can temporarily run an extra replacement task for a single-task service.
+- The existing NAT gateway can remain the main fixed cost while the stack is deployed.
+- CloudWatch alarms have low standing cost, but they are not free.
+
 ## Verification And Cleanup Preview
 
 Before applying the full configuration, check:
