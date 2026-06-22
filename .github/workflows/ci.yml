@@ -45,6 +45,9 @@ jobs:
       - name: Build final container image
         run: docker build --file app/Dockerfile --tag "${CI_IMAGE_REF}" app
 
+      - name: Verify runtime image excludes compiled tests
+        run: docker run --rm --entrypoint sh "${CI_IMAGE_REF}" -c 'test -f dist/src/server.js && test ! -e dist/test'
+
       - name: Run container smoke test
         working-directory: app
         env:
