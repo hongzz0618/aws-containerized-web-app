@@ -86,7 +86,6 @@ The Terraform configuration provisions:
 | `modules/observability/` | Focused CloudWatch runtime alarms |
 | `scripts/` | Static Terraform regression checks used by CI |
 | `diagram/` | Architecture diagram |
-| `images/` | Demo screenshots |
 
 ## How To Deploy
 
