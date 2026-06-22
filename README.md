@@ -2,7 +2,7 @@
 
 This repository is a compact reference project for running a containerized Node.js web application on AWS using ECS Fargate, an Application Load Balancer, private subnets, and Terraform.
 
-The configuration is intentionally compact so the infrastructure relationships are easy to inspect. It is a baseline deployment, not a complete container platform.
+The configuration is intentionally compact so the infrastructure relationships are easy to inspect. It is a focused reference deployment, not a complete container platform.
 
 ## Use Case
 
@@ -17,8 +17,11 @@ Realistic examples include a simple backend web service or internal service wher
 - Placing ECS tasks in private subnets
 - Configuring bounded ECS service autoscaling with CPU and memory target tracking
 - Using ECS deployment guardrails for rolling replacement and rollback
+- Building a minimal non-root runtime image without compiled test files
+- Generating an SBOM and vulnerability report from the validated final image
 - Adding a small set of ALB and ECS CloudWatch alarms
-- Using Terraform modules to separate VPC, ALB, and ECS concerns
+- Using native Terraform plan tests for infrastructure contracts
+- Using Terraform modules to separate VPC, ALB, ECS, ECR, and observability concerns
 - Identifying trade-offs around public access, private task networking, and network cost
 
 ## Architecture Overview
@@ -72,10 +75,11 @@ The Terraform configuration provisions:
 
 | Path | Purpose |
 | --- | --- |
-| `main.tf` | Root Terraform wiring for VPC, ALB, and ECS modules |
-| `variables.tf` | Region, naming, application image, and runtime inputs |
+| `main.tf` | Root Terraform wiring for VPC, ALB, ECR, ECS, and observability modules |
+| `variables.tf` | Region, naming, application image, runtime, scaling, and alarm inputs |
+| `tests/plan_contracts.tftest.hcl` | Native Terraform plan tests for image, ECR, ECS, ALB, security-group, and autoscaling contracts |
 | `app/` | Minimal TypeScript sample app and Dockerfile |
-| `.github/workflows/ci.yml` | GitHub Actions workflow for app, container, and Terraform validation |
+| `.github/workflows/ci.yml` | GitHub Actions workflow for app, container, security-report, and Terraform validation |
 | `.github/workflows/release-container-image.yml` | Manual GitHub Actions workflow for approved ECR image publication |
 | `docs/deployment-runbook.md` | Manual ECR image publication and digest-pinned deployment workflow |
 | `docs/adr/` | Architecture decision records for operational trade-offs |
@@ -84,7 +88,7 @@ The Terraform configuration provisions:
 | `modules/ecs-fargate/` | ECS cluster, task definition, service, autoscaling, and IAM roles |
 | `modules/ecr/` | Private ECR repository and lifecycle policy |
 | `modules/observability/` | Focused CloudWatch runtime alarms |
-| `scripts/` | Static Terraform regression checks used by CI |
+| `scripts/` | Container scanning and static Terraform, CI, and release regression checks |
 | `diagram/` | Architecture diagram |
 
 ## How To Deploy
@@ -92,7 +96,9 @@ The Terraform configuration provisions:
 Prerequisites:
 
 - AWS credentials configured locally
-- Terraform installed
+- Terraform `>= 1.7.0`
+- Docker with an active daemon
+- Node.js 24 and npm for local application validation
 - A digest-pinned application image reference for `app_image_uri` in the form `<repository-url>@sha256:<64-lowercase-hex-digest>`
 - A region where the selected services are available
 
@@ -100,11 +106,22 @@ ECR has a bootstrap dependency: the repository must exist before the first image
 
 [Container Image Deployment Runbook](docs/deployment-runbook.md)
 
-Initial review:
+Initial local infrastructure validation:
 
 ```bash
-terraform init
+terraform fmt -check -recursive
+terraform init -backend=false -input=false
+terraform validate -no-color
+terraform test -no-color
+```
+
+Prepare deployment inputs and review the plan:
+
+```bash
 cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with local values.
+
+terraform init
 terraform plan
 ```
 
@@ -146,37 +163,38 @@ npm run test:container
 
 The smoke test builds the image, starts a temporary container on `127.0.0.1`, runs it with a read-only root filesystem, drops Linux capabilities, enables `no-new-privileges`, checks `GET /health` and `GET /`, verifies the runtime UID is not root, stops the container through Docker, checks shutdown logs, and removes the temporary container.
 
-CI uses the same Dockerfile and build context, but builds the final image once with a commit-specific local tag, then reuses that same local image for the smoke test, SBOM generation, and vulnerability scanning. CI does not tag the image as `latest`, push it to ECR, or deploy it to AWS.
+CI uses the same Dockerfile and build context, builds the final image once with a commit-specific local tag, confirms that the runtime image contains `dist/src/server.js` but not compiled tests, and then reuses that same image for the smoke test, SBOM generation, and vulnerability scanning. CI does not tag the image as `latest`, push it to ECR, or deploy it to AWS.
 
 Terraform manages a private ECR repository for the application image. Repository tags are immutable, scan-on-push is enabled, and a lifecycle policy expires untagged images after 7 days while retaining the newest 10 `git-` tagged images.
 
-CI validates the application container but does not publish images. Image publication is handled by a separate manual GitHub Actions workflow that requires the `container-release` GitHub Environment, uses GitHub OIDC for short-lived AWS credentials, publishes an immutable `git-<full-sha>` tag to ECR, and records the remote digest. Publishing an image is not an ECS deployment; ECS receives the full digest-pinned image reference through `app_image_uri` as `<repository-url>@sha256:<64-lowercase-hex-digest>` after following the runbook.
+CI validates the application container but does not publish images. Image publication is handled by a separate manual GitHub Actions workflow that requires the `container-release` GitHub Environment, uses GitHub OIDC for short-lived AWS credentials, publishes an immutable `git-<full-sha>` tag to ECR, and records the remote digest. Publishing an image is not an ECS deployment; ECS receives the full digest-pinned image reference through `app_image_uri` after following the runbook.
 
 ## CI Validation
 
-This repository includes a GitHub Actions CI workflow for local-style validation. The workflow:
+The GitHub Actions workflow:
 
 - Installs the sample app dependencies with `npm ci`
 - Typechecks, builds, and tests the TypeScript app
-- Builds the final sample app Docker image once and runs the container smoke test against that image
-- Generates a CycloneDX JSON SBOM from the same final image with Trivy `v0.71.2`
-- Generates a Trivy JSON vulnerability report from the same final image and prints a human-readable summary in CI logs
-- Fails only when Trivy finds fixable CRITICAL vulnerabilities in the final image
-- Uploads the SBOM and vulnerability report as 14-day GitHub Actions artifacts
-- Runs `terraform fmt -check -recursive`
-- Runs `terraform init -backend=false -input=false`
-- Runs `terraform validate -no-color`
-- Runs focused static Terraform and CI regression checks for autoscaling, deployment guardrails, alarm dimensions, scope controls, single-image scanning, artifact retention, and minimal workflow permissions
+- Builds the final Docker image once
+- Confirms the runtime image excludes compiled tests
+- Runs the container smoke test against the same image
+- Generates a CycloneDX JSON SBOM with Trivy `v0.71.2`
+- Generates a Trivy JSON vulnerability report and prints a readable summary
+- Fails when Trivy finds fixable CRITICAL vulnerabilities in the final image
+- Uploads the SBOM and vulnerability report as 14-day workflow artifacts
+- Runs Terraform formatting, backend-disabled initialization, and validation
+- Runs native Terraform plan contract tests
+- Runs focused static Terraform, CI, and release regression checks
 
-The workflow validates the application, container build, container reports, and Terraform configuration. It does not upload SARIF, authenticate to AWS, push to ECR, or deploy resources to AWS.
+The workflow uses read-only repository permissions. It does not upload SARIF, authenticate to AWS, push to ECR, or deploy resources.
 
 The vulnerability report keeps all reported severities for review. The initial gate is intentionally narrow: HIGH vulnerabilities are visible but do not block CI, unfixed CRITICAL vulnerabilities remain in the report but do not block the current gate, and fixable CRITICAL vulnerabilities fail the workflow. This is a starting policy for a reference project, not a claim that the image is free of risk or that the SBOM is a complete compliance inventory.
 
 ## Manual Image Release
 
-The `Release Container Image` workflow is `workflow_dispatch` only. It requires running from `main`, a full 40-character SHA confirmation, and approval through the fixed `container-release` GitHub Environment before it can assume the optional ECR release role. The workflow builds the final image once, smoke-tests and scans that same local image, then uses OIDC to push only the immutable `git-<full-sha>` tag to the existing ECR repository.
+The `Release Container Image` workflow is `workflow_dispatch` only. It requires running from `main`, a full 40-character SHA confirmation, and approval through the fixed `container-release` GitHub Environment before it can assume the optional ECR release role.
 
-The release workflow writes the resolved ECR digest URI to the job summary and does not update an ECS task definition, update an ECS service, create a GitHub Release, sign the image, generate provenance, or deploy AWS resources.
+The workflow builds, smoke-tests, and scans one final local image, then uses GitHub OIDC to push only the immutable `git-<full-sha>` tag to the existing ECR repository. It writes the resolved ECR digest URI to the job summary. It does not update ECS, create a GitHub Release, sign the image, generate provenance, or deploy AWS resources.
 
 ## How To Clean Up
 
@@ -224,10 +242,9 @@ Destroy the stack after testing if you do not need it running.
 
 - The ALB uses HTTP, not HTTPS.
 - No custom domain or certificate is configured.
-- ECR image publication is manual; CI does not push images or deploy to AWS.
 - The manual ECR release workflow and IAM configuration are statically validated. Live OIDC assumption and ECR publication require Terraform deployment, GitHub Environment setup, and manual workflow execution.
 - The ECS task uses `PORT=3000` and `SHUTDOWN_TIMEOUT_MS=10000`. ECS `stopTimeout` is set to 15 seconds, and the ALB target group deregistration delay is set to 30 seconds.
-- The CI workflow validates changes but does not publish container images or deploy to AWS.
+- CI validates the application, final image, security reports, and Terraform contracts but does not publish or deploy.
 - Autoscaling activity, alarm data, and rollback behavior still require controlled AWS deployment validation.
 - Alarm thresholds are initial reference values and should be reviewed after real traffic observations.
 - IAM and security group rules should be reviewed before using this pattern outside a learning or sandbox account.
@@ -248,6 +265,6 @@ Destroy the stack after testing if you do not need it running.
 
 ## Project Maturity
 
-Maturity: Baseline reference project.
+Maturity: Strengthened reference implementation; live AWS runtime validation remains pending.
 
-This repo is useful for discussing Fargate networking, ALB routing, container health checks, bounded service scaling, and image deployment trade-offs. It needs additional security, operational, and deployment validation before it should be adapted for real workloads.
+The repository is useful for discussing Fargate networking, ALB routing, container health checks, bounded service scaling, image integrity, container security checks, and deployment trade-offs. Additional security and operational controls should be selected according to the intended workload before adapting the pattern beyond a learning or sandbox environment.
