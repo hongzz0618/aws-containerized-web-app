@@ -252,9 +252,3 @@ Destroy the stack after testing if you do not need it running.
 Maturity: Baseline reference project.
 
 This repo is useful for discussing Fargate networking, ALB routing, container health checks, bounded service scaling, and image deployment trade-offs. It needs additional security, operational, and deployment validation before it should be adapted for real workloads.
-
-## Related Reference Hub
-
-This project is part of my AWS Backend Architecture Reference Hub, which connects backend-focused AWS architecture projects, infrastructure-as-code practice, and engineering trade-offs.
-
-[AWS Architecture Labs](https://github.com/hongzz0618/aws-architecture-labs)
