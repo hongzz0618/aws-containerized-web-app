@@ -93,7 +93,7 @@ Prerequisites:
 
 - AWS credentials configured locally
 - Terraform installed
-- A digest-pinned application image reference for `app_image_uri`
+- A digest-pinned application image reference for `app_image_uri` in the form `<repository-url>@sha256:<64-lowercase-hex-digest>`
 - A region where the selected services are available
 
 ECR has a bootstrap dependency: the repository must exist before the first image can be pushed, while the full ECS deployment needs an existing image. Use the deployment runbook for the controlled manual publication flow:
@@ -108,7 +108,7 @@ cp terraform.tfvars.example terraform.tfvars
 terraform plan
 ```
 
-After the ECR repository is bootstrapped, publish an immutable `git-<full-commit-sha>` image tag manually, retrieve its digest, set `app_image_uri` to `<repository-url>@sha256:<digest>`, and use a normal Terraform plan/apply. Real AWS runtime validation remains pending until that controlled deployment is performed.
+After the ECR repository is bootstrapped, publish an immutable `git-<full-commit-sha>` image tag manually, retrieve its digest, set `app_image_uri` to `<repository-url>@sha256:<64-lowercase-hex-digest>`, and use a normal Terraform plan/apply. Real AWS runtime validation remains pending until that controlled deployment is performed.
 
 Default ECS capacity is intentionally small:
 
@@ -150,7 +150,7 @@ CI uses the same Dockerfile and build context, but builds the final image once w
 
 Terraform manages a private ECR repository for the application image. Repository tags are immutable, scan-on-push is enabled, and a lifecycle policy expires untagged images after 7 days while retaining the newest 10 `git-` tagged images.
 
-CI validates the application container but does not publish images. Image publication is handled by a separate manual GitHub Actions workflow that requires the `container-release` GitHub Environment, uses GitHub OIDC for short-lived AWS credentials, publishes an immutable `git-<full-sha>` tag to ECR, and records the remote digest. Publishing an image is not an ECS deployment; ECS still receives the full image reference through `app_image_uri`, preferably as `<repository-url>@sha256:<digest>` after following the runbook.
+CI validates the application container but does not publish images. Image publication is handled by a separate manual GitHub Actions workflow that requires the `container-release` GitHub Environment, uses GitHub OIDC for short-lived AWS credentials, publishes an immutable `git-<full-sha>` tag to ECR, and records the remote digest. Publishing an image is not an ECS deployment; ECS receives the full digest-pinned image reference through `app_image_uri` as `<repository-url>@sha256:<64-lowercase-hex-digest>` after following the runbook.
 
 ## CI Validation
 

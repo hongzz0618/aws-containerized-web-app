@@ -32,6 +32,10 @@ function assertMatches(content, pattern, label) {
 
 const main = read("main.tf");
 const variables = read("variables.tf");
+const gitignore = read(".gitignore");
+const readme = read("README.md");
+const runbook = read("docs/deployment-runbook.md");
+const tfvarsExample = read("terraform.tfvars.example");
 const ecs = read("modules/ecs-fargate/main.tf");
 const alb = read("modules/alb/main.tf");
 const observability = read("modules/observability/main.tf");
@@ -64,6 +68,20 @@ assertMatches(variables, /variable "service_min_capacity"[\s\S]*?default\s*=\s*1
 assertMatches(variables, /variable "service_max_capacity"[\s\S]*?default\s*=\s*3/, "default max capacity");
 assertIncludes(variables, "check \"service_capacity\"", "capacity relationship check");
 assertIncludes(variables, "check \"deployment_percentages\"", "deployment percentage relationship check");
+
+assertMatches(gitignore, /^#? Terraform files[\s\S]*^\*\.tfvars$/m, "tfvars ignore rule");
+assertMatches(gitignore, /^#? Terraform files[\s\S]*^\*\.tfvars\.json$/m, "tfvars json ignore rule");
+assert(!/^terraform\.tfvars\.example$/m.test(gitignore), "terraform.tfvars.example must not be ignored explicitly");
+
+assertIncludes(variables, 'can(regex("^[^\\\\s@]+@sha256:[0-9a-f]{64}$", var.app_image_uri))', "app_image_uri digest-only validation");
+assertIncludes(variables, "64 lowercase hexadecimal characters", "app_image_uri validation message");
+assert(!variables.includes('can(regex(":[^/:@]+$"'), "app_image_uri must not allow tag-only image references");
+
+const digestUriPattern = /[A-Za-z0-9.-]+(?:\/[A-Za-z0-9._-]+)+@sha256:[0-9a-f]{64}/;
+assertMatches(tfvarsExample, digestUriPattern, "tfvars example digest-pinned app_image_uri");
+assertIncludes(readme, "<repository-url>@sha256:<64-lowercase-hex-digest>", "README digest URI contract");
+assertIncludes(runbook, "<repository-url>@sha256:<64-lowercase-hex-digest>", "runbook digest URI contract");
+assert(!readme.includes("preferably as `<repository-url>@sha256:<digest>`"), "README must not present digest pinning as optional");
 
 assertMatches(main, /desired_count\s*=\s*var\.service_desired_count/, "root desired count wiring");
 assertMatches(main, /min_capacity\s*=\s*var\.service_min_capacity/, "root min capacity wiring");

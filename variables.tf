@@ -27,21 +27,12 @@ variable "environment" {
 }
 
 variable "app_image_uri" {
-  description = "Container image reference used by the ECS task. Prefer an immutable digest such as 123456789012.dkr.ecr.eu-west-1.amazonaws.com/example@sha256:<digest>."
+  description = "Digest-pinned container image reference used by the ECS task. Must end with @sha256:<64 lowercase hexadecimal characters>, for example 123456789012.dkr.ecr.eu-west-1.amazonaws.com/example@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
   type        = string
 
   validation {
-    condition = (
-      length(trimspace(var.app_image_uri)) > 0 &&
-      !can(regex("\\s", var.app_image_uri)) &&
-      lower(trimspace(var.app_image_uri)) != "latest" &&
-      !can(regex(":latest$", lower(trimspace(var.app_image_uri)))) &&
-      (
-        can(regex("@sha256:[0-9a-fA-F]{64}$", trimspace(var.app_image_uri))) ||
-        can(regex(":[^/:@]+$", trimspace(var.app_image_uri)))
-      )
-    )
-    error_message = "app_image_uri must be non-empty, contain no whitespace, include an explicit non-latest tag or sha256 digest, and must not be latest or end in :latest."
+    condition     = can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", var.app_image_uri))
+    error_message = "app_image_uri must be a digest-pinned image reference ending with @sha256:<64 lowercase hexadecimal characters>, for example 123456789012.dkr.ecr.eu-west-1.amazonaws.com/example@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
   }
 }
 

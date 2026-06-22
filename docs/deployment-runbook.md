@@ -153,7 +153,7 @@ ECR tags are immutable. If `git-<full-sha>` already exists, the workflow queries
 After a successful release, copy the digest URI from the workflow summary:
 
 ```text
-<repository-url>@sha256:<64-hex-digest>
+<repository-url>@sha256:<64-lowercase-hex-digest>
 ```
 
 Use that value as `app_image_uri` for a later, separate Terraform deployment. Publishing the image is not an ECS deployment. Do not treat the release workflow as evidence that ECS task definition updates, service rollout, alarms, rollback, or runtime behavior have been live-validated.
@@ -353,7 +353,7 @@ $AppImageUri
 The resulting value has this shape:
 
 ```text
-<repository-url>@sha256:<64-hex-digest>
+<repository-url>@sha256:<64-lowercase-hex-digest>
 ```
 
 ## Full Terraform Deployment
@@ -361,7 +361,7 @@ The resulting value has this shape:
 Set `app_image_uri` to the digest-pinned value:
 
 ```hcl
-app_image_uri = "<repository-url>@sha256:<64-hex-digest>"
+app_image_uri = "<repository-url>@sha256:<64-lowercase-hex-digest>"
 ```
 
 Then use the normal Terraform workflow:
@@ -371,7 +371,7 @@ terraform plan
 terraform apply
 ```
 
-Do not use `:latest`. A digest-pinned image reference makes the ECS task definition resolve to the exact image that was reviewed and pushed.
+Do not use tags such as `:latest` or `:git-<sha>` for `app_image_uri`. A digest-pinned image reference makes the ECS task definition resolve to the exact image that was reviewed and pushed.
 
 ## Autoscaling Verification
 
@@ -453,7 +453,7 @@ Alarms only send notifications when `alarm_action_arns` or `ok_action_arns` are 
 Before applying the full configuration, check:
 
 - ECR image metadata for the expected `git-<full-sha>` tag.
-- `app_image_uri` uses `@sha256:` and does not use `latest`.
+- `app_image_uri` uses `<repository-url>@sha256:<64-lowercase-hex-digest>` and does not use a tag-only reference.
 - The digest came from `aws ecr describe-images` for the exact tag.
 - The selected AWS region matches the Terraform provider region.
 
