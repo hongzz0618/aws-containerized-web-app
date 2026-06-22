@@ -7,6 +7,9 @@ on:
 permissions:
   contents: read
 
+env:
+  TF_IN_AUTOMATION: "true"
+
 jobs:
   app:
     name: App validation
@@ -79,6 +82,8 @@ jobs:
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.8
 
       - name: Set up Node.js for static checks
         uses: actions/setup-node@v4
@@ -93,6 +98,9 @@ jobs:
 
       - name: Validate Terraform
         run: terraform validate -no-color
+
+      - name: Test Terraform plan contracts
+        run: terraform test -no-color
 
       - name: Run Terraform static regression checks
         run: node scripts/terraform-static-check.mjs
