@@ -1,5 +1,7 @@
 # AWS Containerized Web App
 
+[![CI](https://github.com/hongzz0618/aws-containerized-web-app/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hongzz0618/aws-containerized-web-app/actions/workflows/ci.yml)
+
 This repository is a compact reference project for running a containerized Node.js web application on AWS using ECS Fargate, an Application Load Balancer, private subnets, and Terraform.
 
 The configuration is intentionally compact so the infrastructure relationships are easy to inspect. It is a focused reference deployment, not a complete container platform.
