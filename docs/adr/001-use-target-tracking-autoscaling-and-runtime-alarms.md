@@ -64,7 +64,7 @@ Rolling deployments explicitly use:
 
 For the default single-task service, `100/200` allows ECS to start one replacement task before stopping the old one. That improves availability during deployment but can temporarily run two tasks and increase Fargate cost during the rollout.
 
-ECS deployment alarm rollback is not wired in this wave. The existing circuit breaker and ALB health checks already provide direct deployment failure protection. The new CloudWatch alarms are useful operational signals, but they are not yet validated against real deployment timing and could be noisy during startup or low-traffic periods if used as rollback gates without more evidence.
+ECS deployment alarm rollback is not wired in this project. The deployment circuit breaker and ALB health checks provide the current deployment failure protection. The CloudWatch alarms were reviewed during a controlled AWS deployment and remained in OK state, but they were not exercised as rollback gates or calibrated under workload-specific traffic.
 
 ## Runtime Alarms
 
@@ -96,9 +96,13 @@ CloudWatch alarms add a small standing cost. No new NAT gateways, databases, sto
 - Request-count target tracking: deferred because there is no measured request-per-task target for this app.
 - Fargate Spot: deferred because interruption handling is outside this wave and would change reliability behavior.
 - Larger alarm set or dashboard: deferred to keep the signal set focused and avoid unvalidated noise.
-- ECS deployment alarm rollback: deferred until the alarm thresholds are validated during real deployments.
+- ECS deployment alarm rollback: deferred until alarm thresholds are calibrated under workload-specific traffic and intentionally exercised during rollout-failure testing.
 - Autoscaling enable/disable toggle: deferred because always-on autoscaling keeps the reference simpler and avoids conditional lifecycle complexity.
 
 ## Validation Status
 
-Terraform formatting, initialization, validation, and static regression checks are expected to run locally and in CI. AWS deployment validation, real autoscaling activity, CloudWatch alarm data, and rollback behavior still require a controlled deployment.
+Terraform formatting, initialization, validation, plan-contract tests, and static regression checks run locally and in CI.
+
+A controlled AWS deployment validated the digest-pinned ECS service, ALB target health, application endpoints, CloudWatch Logs delivery, and the presence and `OK` state of the four runtime alarms. The environment was subsequently destroyed and Terraform state verification reported zero remaining entries.
+
+Real autoscaling scale-out and scale-in behavior, alarm notification delivery, workload-specific threshold calibration, and deployment rollback were not actively exercised during that validation cycle.

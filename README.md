@@ -44,34 +44,36 @@ Runtime request flow:
 
 The ECS service starts with a low default desired count and can scale within configured min/max capacity. Basic deployment rollback, explicit rolling deployment percentages, and ALB target health behavior are configured.
 
-## AWS Services Used
+## AWS Deployment Validation
 
-| Service | Role in this lab |
-| --- | --- |
-| Amazon VPC | Provides public and private networking |
-| Amazon ECS | Runs the container service |
-| AWS Fargate | Provides serverless container compute |
-| Amazon ECR | Stores the application image in a private immutable-tag repository |
-| Elastic Load Balancing | Routes HTTP traffic to ECS tasks |
-| Application Auto Scaling | Adjusts ECS service desired count within configured limits |
-| AWS IAM | Provides ECS task execution and task roles |
-| Amazon CloudWatch | Stores ECS task logs and evaluates runtime alarms |
+A complete AWS deployment, runtime-validation, and teardown cycle was executed in `eu-west-1` at commit [`e72c86e`](https://github.com/hongzz0618/aws-containerized-web-app/commit/e72c86e0799df3701f2a81ac69001d166109249c).
+
+The validation confirmed:
+
+- immutable ECR image publication and digest-pinned ECS deployment
+- ECS service active with one running task and one healthy ALB target
+- successful `GET /` and `GET /health` responses through the ALB
+- CloudWatch runtime logs and four runtime alarms reviewed
+- successful Terraform teardown with zero remaining Terraform state entries
+
+The environment was destroyed after validation and is no longer publicly available. See [AWS Deployment Validation](docs/deployment-validation.md) for the complete evidence record.
+
+![ECS service running](docs/evidence/03-ecs-service-running.png)
+
+![ALB application response](docs/evidence/05-alb-application-response.png)
 
 ## What Terraform Creates
 
 The Terraform configuration provisions:
 
-- VPC with public and private subnets
-- NAT gateway for private subnet outbound access, which creates standing hourly cost while deployed
+- VPC with public and private subnets, plus one NAT gateway for private subnet outbound access
 - Private ECR repository with immutable tags, scan-on-push, AES256 encryption, and lifecycle retention
-- Optional GitHub OIDC IAM role for manually publishing validated images to the ECR repository
-- Application Load Balancer and target group
-- ECS cluster, task definition, and service
-- ECS service Application Auto Scaling target and CPU/memory target tracking policies
-- CloudWatch alarms for ALB target health, target 5XX responses, and ECS service saturation
-- Security groups for ALB and ECS
-- IAM roles for ECS task execution and task permissions
-- CloudWatch log group for ECS task logs
+- Application Load Balancer, listener, and target group for routing HTTP traffic to ECS tasks
+- ECS Fargate cluster, task definition, and service running private tasks
+- Application Auto Scaling target with CPU and memory target-tracking policies
+- CloudWatch Logs group and four runtime alarms for ALB target health, target 5XX responses, and ECS CPU/memory saturation
+- IAM roles for ECS task execution, task permissions, and the optional GitHub OIDC ECR release role
+- Security groups for ALB ingress and ECS task ingress from the ALB
 
 ## Repository Layout
 
@@ -152,12 +154,6 @@ npm test
 npm run build
 ```
 
-Build the container image:
-
-```bash
-docker build -t aws-containerized-web-app-local .
-```
-
 Run the container smoke test from `app/` when the Docker daemon is active:
 
 ```bash
@@ -199,22 +195,6 @@ The `Release Container Image` workflow is `workflow_dispatch` only. It requires 
 
 The workflow builds, smoke-tests, and scans one final local image, then uses GitHub OIDC to push only the immutable `git-<full-sha>` tag to the existing ECR repository. It writes the resolved ECR digest URI to the job summary. It does not update ECS, create a GitHub Release, sign the image, generate provenance, or deploy AWS resources.
 
-## AWS Deployment Validation
-
-A complete AWS deployment, runtime-validation, and teardown cycle was executed in `eu-west-1` at commit `e72c86e0799df3701f2a81ac69001d166109249c`.
-
-The validation confirmed immutable ECR image publication, digest-pinned ECS deployment, an active ECS service with one running task, one healthy ALB target, successful `GET /` and `GET /health` responses through the ALB, CloudWatch runtime logs, four runtime alarms reviewed in `OK` state, complete Terraform teardown, and zero remaining Terraform state entries. The environment was destroyed after validation and is no longer publicly available.
-
-![Terraform apply complete](docs/evidence/02-terraform-apply-complete.png)
-
-![ECS service running](docs/evidence/03-ecs-service-running.png)
-
-![ALB application response](docs/evidence/05-alb-application-response.png)
-
-![CloudWatch runtime logs](docs/evidence/07-cloudwatch-runtime-logs.png)
-
-See [AWS Deployment Validation](docs/deployment-validation.md) for the full evidence record, including runtime, observability, teardown, and cleanup verification.
-
 ## How To Clean Up
 
 ```bash
@@ -227,7 +207,7 @@ The ECR repository uses `force_delete = false`. Terraform cannot destroy a non-e
 
 ## Security Notes
 
-- The ALB listener is public HTTP on port 80 for learning/demo purposes. Real deployments should add HTTPS with ACM, redirect HTTP to HTTPS, and review security controls.
+- The public ALB listener uses HTTP on port 80. A different workload should add HTTPS with ACM, redirect HTTP to HTTPS, and review security controls.
 - ECS task ingress is limited to the ALB security group.
 - The ECS task definition enables a read-only root filesystem and drops Linux capabilities. ECS task definitions do not expose a direct `no-new-privileges` setting equivalent to the local Docker smoke test.
 - The execution role is used for ECS startup operations such as pulling the image and writing logs. The task role has no additional application policies because the app does not call AWS APIs.
@@ -237,13 +217,7 @@ The ECR repository uses `force_delete = false`. Terraform cannot destroy a non-e
 
 ## Cost Notes
 
-Potential standing cost drivers include:
-
-- NAT gateway hourly charges and data processing
-- Application Load Balancer hourly charges
-- Fargate task runtime
-- CloudWatch Logs storage and ingestion
-- CloudWatch alarms
+Potential standing cost drivers include the NAT gateway, Application Load Balancer, Fargate task runtime, CloudWatch Logs, and CloudWatch alarms. The NAT gateway is likely the main fixed cost while deployed.
 
 Destroy the stack after testing if you do not need it running.
 
@@ -253,20 +227,17 @@ Destroy the stack after testing if you do not need it running.
 - Scale-out cooldown is shorter than scale-in cooldown so capacity can respond faster to pressure and remove capacity more slowly after bursts.
 - Either CPU or memory target tracking can request scale-out. Scale-in is conservative and only proceeds when the target tracking policies agree capacity can be reduced.
 - During ECS deployments, target tracking scale-in is suspended while scale-out can still occur. `service_max_capacity` remains the hard autoscaling limit.
-- Runtime alarms are created even when notification actions are empty.
-- To send notifications, pass existing action ARNs through `alarm_action_arns` and `ok_action_arns`.
-- Empty action lists mean alarms are visible in CloudWatch but do not send notifications.
+- Runtime alarms are created even when action lists are empty; pass existing ARNs through `alarm_action_arns` and `ok_action_arns` to send notifications.
 
 ## Limitations
 
-- The ALB uses HTTP, not HTTPS.
-- No custom domain or certificate is configured.
+- HTTPS, ACM, and a custom domain are not configured.
 - The manual ECR release workflow and IAM configuration are statically validated. Live OIDC assumption and ECR publication require Terraform deployment, GitHub Environment setup, and manual workflow execution.
 - The ECS task uses `PORT=3000` and `SHUTDOWN_TIMEOUT_MS=10000`. ECS `stopTimeout` is set to 15 seconds, and the ALB target group deregistration delay is set to 30 seconds.
 - CI validates the application, final image, security reports, and Terraform contracts but does not publish or deploy.
 - Runtime alarms were reviewed in `OK` state during the AWS validation cycle, but notification delivery was not configured or tested.
 - Autoscaling scale-out and deployment rollback were not actively triggered during the AWS validation cycle.
-- Alarm thresholds are initial reference values and should be reviewed after real traffic observations.
+- Alarm and autoscaling thresholds are initial reference values and should be reviewed with workload-specific traffic.
 - IAM and security group rules should be reviewed before using this pattern outside a learning or sandbox account.
 
 ## Architecture Trade-offs
@@ -274,17 +245,6 @@ Destroy the stack after testing if you do not need it running.
 - ECS Fargate reduces compute management compared with self-managed container hosts, but gives less control over the underlying runtime environment.
 - A public ALB with private ECS tasks keeps task networking private while still exposing HTTP entry points.
 - A NAT gateway simplifies private subnet outbound access, but it adds standing cost.
-- Target tracking keeps capacity bounded and simple, but the initial thresholds should be reviewed with workload-specific traffic.
-- CloudWatch alarms improve visibility, but empty action lists do not notify anyone.
+- Target tracking keeps capacity bounded and simple.
+- CloudWatch alarms improve visibility when paired with appropriate action ARNs.
 - The compact Terraform structure is easier to inspect, but it does not include the controls expected from a complete container platform.
-
-## Next Improvements
-
-- Add HTTPS listener support with ACM.
-- Add workload-specific autoscaling and rollback exercises if those behaviors need live evidence.
-
-## Project Maturity
-
-Maturity: Strengthened reference implementation with completed AWS deployment, runtime validation, teardown, and cleanup evidence.
-
-The repository is useful for discussing Fargate networking, ALB routing, container health checks, bounded service scaling, image integrity, container security checks, and deployment trade-offs. Additional security and operational controls should be selected according to the intended workload before adapting the pattern beyond a learning or sandbox environment.
