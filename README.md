@@ -84,6 +84,7 @@ The Terraform configuration provisions:
 | `.github/workflows/ci.yml` | GitHub Actions workflow for app, container, security-report, and Terraform validation |
 | `.github/workflows/release-container-image.yml` | Manual GitHub Actions workflow for approved ECR image publication |
 | `docs/deployment-runbook.md` | Manual ECR image publication and digest-pinned deployment workflow |
+| `docs/deployment-validation.md` | Completed AWS deployment, runtime validation, observability, teardown, and cleanup record |
 | `docs/adr/` | Architecture decision records for operational trade-offs |
 | `modules/vpc/` | VPC, subnets, and NAT gateway |
 | `modules/alb/` | ALB, listener, target group, and ALB security group |
@@ -127,7 +128,7 @@ terraform init
 terraform plan
 ```
 
-After the ECR repository is bootstrapped, publish an immutable `git-<full-commit-sha>` image tag manually, retrieve its digest, set `app_image_uri` to `<repository-url>@sha256:<64-lowercase-hex-digest>`, and use a normal Terraform plan/apply. Real AWS runtime validation remains pending until that controlled deployment is performed.
+After the ECR repository is bootstrapped, publish an immutable `git-<full-commit-sha>` image tag manually, retrieve its digest, set `app_image_uri` to `<repository-url>@sha256:<64-lowercase-hex-digest>`, and use a normal Terraform plan/apply. A completed AWS validation record is available in [AWS Deployment Validation](docs/deployment-validation.md).
 
 Default ECS capacity is intentionally small:
 
@@ -198,6 +199,22 @@ The `Release Container Image` workflow is `workflow_dispatch` only. It requires 
 
 The workflow builds, smoke-tests, and scans one final local image, then uses GitHub OIDC to push only the immutable `git-<full-sha>` tag to the existing ECR repository. It writes the resolved ECR digest URI to the job summary. It does not update ECS, create a GitHub Release, sign the image, generate provenance, or deploy AWS resources.
 
+## AWS Deployment Validation
+
+A complete AWS deployment, runtime-validation, and teardown cycle was executed in `eu-west-1` at commit `e72c86e0799df3701f2a81ac69001d166109249c`.
+
+The validation confirmed immutable ECR image publication, digest-pinned ECS deployment, an active ECS service with one running task, one healthy ALB target, successful `GET /` and `GET /health` responses through the ALB, CloudWatch runtime logs, four runtime alarms reviewed in `OK` state, complete Terraform teardown, and zero remaining Terraform state entries. The environment was destroyed after validation and is no longer publicly available.
+
+![Terraform apply complete](docs/evidence/02-terraform-apply-complete.png)
+
+![ECS service running](docs/evidence/03-ecs-service-running.png)
+
+![ALB application response](docs/evidence/05-alb-application-response.png)
+
+![CloudWatch runtime logs](docs/evidence/07-cloudwatch-runtime-logs.png)
+
+See [AWS Deployment Validation](docs/deployment-validation.md) for the full evidence record, including runtime, observability, teardown, and cleanup verification.
+
 ## How To Clean Up
 
 ```bash
@@ -247,7 +264,8 @@ Destroy the stack after testing if you do not need it running.
 - The manual ECR release workflow and IAM configuration are statically validated. Live OIDC assumption and ECR publication require Terraform deployment, GitHub Environment setup, and manual workflow execution.
 - The ECS task uses `PORT=3000` and `SHUTDOWN_TIMEOUT_MS=10000`. ECS `stopTimeout` is set to 15 seconds, and the ALB target group deregistration delay is set to 30 seconds.
 - CI validates the application, final image, security reports, and Terraform contracts but does not publish or deploy.
-- Autoscaling activity, alarm data, and rollback behavior still require controlled AWS deployment validation.
+- Runtime alarms were reviewed in `OK` state during the AWS validation cycle, but notification delivery was not configured or tested.
+- Autoscaling scale-out and deployment rollback were not actively triggered during the AWS validation cycle.
 - Alarm thresholds are initial reference values and should be reviewed after real traffic observations.
 - IAM and security group rules should be reviewed before using this pattern outside a learning or sandbox account.
 
@@ -256,17 +274,17 @@ Destroy the stack after testing if you do not need it running.
 - ECS Fargate reduces compute management compared with self-managed container hosts, but gives less control over the underlying runtime environment.
 - A public ALB with private ECS tasks keeps task networking private while still exposing HTTP entry points.
 - A NAT gateway simplifies private subnet outbound access, but it adds standing cost.
-- Target tracking keeps capacity bounded and simple, but it still needs real runtime validation before relying on the thresholds.
+- Target tracking keeps capacity bounded and simple, but the initial thresholds should be reviewed with workload-specific traffic.
 - CloudWatch alarms improve visibility, but empty action lists do not notify anyone.
 - The compact Terraform structure is easier to inspect, but it does not include the controls expected from a complete container platform.
 
 ## Next Improvements
 
 - Add HTTPS listener support with ACM.
-- Perform a controlled AWS deployment and capture runtime validation evidence.
+- Add workload-specific autoscaling and rollback exercises if those behaviors need live evidence.
 
 ## Project Maturity
 
-Maturity: Strengthened reference implementation; live AWS runtime validation remains pending.
+Maturity: Strengthened reference implementation with completed AWS deployment, runtime validation, teardown, and cleanup evidence.
 
 The repository is useful for discussing Fargate networking, ALB routing, container health checks, bounded service scaling, image integrity, container security checks, and deployment trade-offs. Additional security and operational controls should be selected according to the intended workload before adapting the pattern beyond a learning or sandbox environment.
