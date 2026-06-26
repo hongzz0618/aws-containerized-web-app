@@ -9,7 +9,7 @@ The ECS/Fargate reference service previously used a static desired count and bas
 - deployment percentage behavior was implicit
 - CloudWatch visibility was limited to container logs and ALB target health
 
-This repository remains a compact reference project. The reliability wave should improve service behavior and failure visibility without adding extra routing, security, storage, tracing, or deployment services.
+The current design improves service behavior and failure visibility without adding extra routing, security, storage, tracing, or deployment services.
 
 ## Decision
 
@@ -83,7 +83,7 @@ All alarms use `treat_missing_data = "notBreaching"` because this reference envi
 
 Alarms are created even when no notification actions are supplied. Notification delivery is optional through `alarm_action_arns` and `ok_action_arns`, typically pointing at existing SNS topics.
 
-This wave does not create SNS topics or subscriptions. That avoids hardcoded email addresses, unconfirmed subscriptions, and extra account-level setup.
+The current design does not create SNS topics or subscriptions. That avoids hardcoded email addresses, unconfirmed subscriptions, and extra account-level setup.
 
 ## Cost Impact
 
@@ -94,7 +94,7 @@ CloudWatch alarms add a small standing cost. No new NAT gateways, databases, sto
 ## Alternatives Considered
 
 - Request-count target tracking: deferred because there is no measured request-per-task target for this app.
-- Fargate Spot: deferred because interruption handling is outside this wave and would change reliability behavior.
+- Fargate Spot: deferred because interruption handling is outside the current design and would change reliability behavior.
 - Larger alarm set or dashboard: deferred to keep the signal set focused and avoid unvalidated noise.
 - ECS deployment alarm rollback: deferred until alarm thresholds are calibrated under workload-specific traffic and intentionally exercised during rollout-failure testing.
 - Autoscaling enable/disable toggle: deferred because always-on autoscaling keeps the reference simpler and avoids conditional lifecycle complexity.

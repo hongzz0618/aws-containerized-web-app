@@ -2,13 +2,13 @@
 
 [![CI](https://github.com/hongzz0618/aws-containerized-web-app/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hongzz0618/aws-containerized-web-app/actions/workflows/ci.yml)
 
-This repository is a compact reference project for running a containerized Node.js web application on AWS using ECS Fargate, an Application Load Balancer, private subnets, and Terraform.
+A compact reference project for running a containerized Node.js web application on AWS using ECS Fargate, an Application Load Balancer, private subnets, and Terraform.
 
 The configuration is intentionally compact so the infrastructure relationships are easy to inspect. It is a focused reference deployment, not a complete container platform.
 
 ## Use Case
 
-This project represents a small web application or internal service that runs as a container behind a load balancer while keeping ECS tasks in private subnets.
+The project represents a small web application or internal service that runs as a container behind a load balancer while keeping ECS tasks in private subnets.
 
 Realistic examples include a simple backend web service or internal service where the ALB handles public HTTP routing and ECS runs the application container in private subnets.
 
@@ -46,7 +46,7 @@ The ECS service starts with a low default desired count and can scale within con
 
 ## AWS Deployment Validation
 
-A complete AWS deployment, runtime-validation, and teardown cycle was executed in `eu-west-1` at commit [`e72c86e`](https://github.com/hongzz0618/aws-containerized-web-app/commit/e72c86e0799df3701f2a81ac69001d166109249c).
+The stack was deployed and tested in `eu-west-1` at commit [`e72c86e`](https://github.com/hongzz0618/aws-containerized-web-app/commit/e72c86e0799df3701f2a81ac69001d166109249c).
 
 The validation confirmed:
 
@@ -185,7 +185,7 @@ The GitHub Actions workflow:
 - Runs native Terraform plan contract tests
 - Runs focused static Terraform, CI, and release regression checks
 
-The workflow uses read-only repository permissions. It does not upload SARIF, authenticate to AWS, push to ECR, or deploy resources.
+CI uses read-only repository permissions. It does not upload SARIF, authenticate to AWS, push to ECR, or deploy resources.
 
 The vulnerability report keeps all reported severities for review. The initial gate is intentionally narrow: HIGH vulnerabilities are visible but do not block CI, unfixed CRITICAL vulnerabilities remain in the report but do not block the current gate, and fixable CRITICAL vulnerabilities fail the workflow. This is a starting policy for a reference project, not a claim that the image is free of risk or that the SBOM is a complete compliance inventory.
 
@@ -193,7 +193,7 @@ The vulnerability report keeps all reported severities for review. The initial g
 
 The `Release Container Image` workflow is `workflow_dispatch` only. It requires running from `main`, a full 40-character SHA confirmation, and approval through the fixed `container-release` GitHub Environment before it can assume the optional ECR release role.
 
-The workflow builds, smoke-tests, and scans one final local image, then uses GitHub OIDC to push only the immutable `git-<full-sha>` tag to the existing ECR repository. It writes the resolved ECR digest URI to the job summary. It does not update ECS, create a GitHub Release, sign the image, generate provenance, or deploy AWS resources.
+The manual release job builds, smoke-tests, and scans one final local image, then uses GitHub OIDC to push only the immutable `git-<full-sha>` tag to the existing ECR repository. It writes the resolved ECR digest URI to the job summary. It does not update ECS, create a GitHub Release, sign the image, generate provenance, or deploy AWS resources.
 
 ## How To Clean Up
 
@@ -244,7 +244,7 @@ Destroy the stack after testing if you do not need it running.
 
 - ECS Fargate reduces compute management compared with self-managed container hosts, but gives less control over the underlying runtime environment.
 - A public ALB with private ECS tasks keeps task networking private while still exposing HTTP entry points.
-- A NAT gateway simplifies private subnet outbound access, but it adds standing cost.
-- Target tracking keeps capacity bounded and simple.
-- CloudWatch alarms improve visibility when paired with appropriate action ARNs.
+- A single NAT gateway keeps the reference environment cheaper, but private-subnet egress depends on one Availability Zone. Workloads with stricter availability requirements would normally use one NAT gateway per Availability Zone or evaluate VPC endpoints.
+- Target tracking provides bounded scaling with little custom logic, but its thresholds still need workload-specific calibration.
+- CloudWatch alarms provide basic runtime visibility, but empty action lists do not notify operators.
 - The compact Terraform structure is easier to inspect, but it does not include the controls expected from a complete container platform.

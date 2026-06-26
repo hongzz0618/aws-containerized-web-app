@@ -2,15 +2,15 @@
 
 ## Validation Summary
 
-A complete AWS deployment, runtime-validation, observability-review, and teardown cycle was performed for this ECS Fargate project in `eu-west-1` at commit `e72c86e0799df3701f2a81ac69001d166109249c`.
+The stack was deployed in `eu-west-1` from commit `e72c86e0799df3701f2a81ac69001d166109249c`. Validation covered image publication, infrastructure creation, runtime checks, observability review, teardown, and cleanup.
 
-The validation flow was:
+The work followed this order:
 
 ```text
 Validate locally -> Bootstrap ECR -> Build and publish image -> Resolve digest -> Deploy infrastructure -> Validate runtime -> Review observability -> Destroy -> Verify cleanup
 ```
 
-The deployed environment was later destroyed. The application is no longer deployed or publicly available.
+After validation, the environment was destroyed. The application is no longer deployed or publicly available.
 
 ## Scope and Environment
 
@@ -24,7 +24,7 @@ The validation covered the Terraform-managed container web stack:
 - CloudWatch Logs and four runtime CloudWatch alarms
 - IAM roles and security groups required by the ECS service
 
-The run did not validate HTTPS, a custom domain, authentication, notification delivery for alarms, forced autoscaling scale-out, or deployment rollback by intentionally triggering a bad deployment.
+The validation did not include HTTPS, a custom domain, authentication, notification delivery for alarms, forced autoscaling scale-out, or deployment rollback by intentionally triggering a bad deployment.
 
 ## Image Publication and Digest Pinning
 
@@ -42,8 +42,6 @@ ECS was configured with the repository URL and digest rather than a tag such as 
 
 ![ECR image digest](evidence/01-ecr-image-digest.png)
 
-The ECR evidence shows the immutable image tag and the digest used for the ECS deployment.
-
 ## Infrastructure Deployment
 
 After the image digest was available, the full Terraform deployment completed with:
@@ -57,8 +55,6 @@ Terraform outputs included the ECS cluster `container-web-dev-cluster`, ECS serv
 The Terraform state contained `44` entries after deployment, including managed resources and data sources.
 
 ![Terraform apply complete](evidence/02-terraform-apply-complete.png)
-
-The apply evidence records completion of the full infrastructure deployment after ECR bootstrap and image publication.
 
 ## ECS and Load Balancer Validation
 
@@ -74,8 +70,6 @@ The ECS service was verified in an active steady state:
 
 ![ECS service running](evidence/03-ecs-service-running.png)
 
-The ECS service evidence shows the service active with one desired and one running task.
-
 The ALB target group was also verified:
 
 - target type: `IP`
@@ -85,8 +79,6 @@ The ALB target group was also verified:
 - unhealthy targets: `0`
 
 ![ALB target healthy](evidence/04-alb-target-healthy.png)
-
-The target group evidence shows the ECS task registered as a healthy IP target on the application port.
 
 ## Runtime Endpoint Validation
 
@@ -103,8 +95,6 @@ The public ALB endpoint returned successful HTTP responses during the validation
 
 ![ALB application response](evidence/05-alb-application-response.png)
 
-The application response evidence confirms that the ALB routed traffic to the running ECS task.
-
 `GET /health` returned:
 
 ```json
@@ -116,8 +106,6 @@ The application response evidence confirms that the ALB routed traffic to the ru
 
 ![ALB health response](evidence/06-alb-health-response.png)
 
-The health response evidence confirms that the health endpoint used by the ALB target group responded successfully.
-
 ## Observability Validation
 
 CloudWatch Logs received the application startup message:
@@ -128,8 +116,6 @@ Container app listening on port 3000
 
 ![CloudWatch runtime logs](evidence/07-cloudwatch-runtime-logs.png)
 
-The log evidence confirms that container logs reached the configured CloudWatch log group.
-
 Four project runtime alarms were reviewed and were in `OK` state:
 
 - `container-web-dev-ecs-cpu-saturation`
@@ -137,9 +123,9 @@ Four project runtime alarms were reviewed and were in `OK` state:
 - `container-web-dev-alb-unhealthy-targets`
 - `container-web-dev-target-5xx`
 
-![CloudWatch runtime alarms](evidence/08-cloudwatch-runtime-alarms.png)
+Alarm notifications were not validated; the Terraform configuration allows empty alarm action lists.
 
-The alarm evidence confirms that the ECS and ALB runtime alarms existed and were not in alarm state. Alarm notifications were not validated; the Terraform configuration allows empty alarm action lists.
+![CloudWatch runtime alarms](evidence/08-cloudwatch-runtime-alarms.png)
 
 ## Cleanup and Residual-Resource Verification
 
@@ -168,8 +154,6 @@ remaining_state_entries = 0
 A subsequent account-level AWS cleanup audit found no remaining active resources associated with this Container project across the enabled AWS Regions.
 
 ![Terraform destroy complete](evidence/09-terraform-destroy-complete.png)
-
-The destroy evidence confirms that Terraform completed the teardown. The application is no longer deployed or publicly available.
 
 ## Evidence
 

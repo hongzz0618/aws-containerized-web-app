@@ -2,7 +2,7 @@
 
 This runbook describes the controlled manual path for publishing the CI-validated application image to the Terraform-managed private ECR repository and then supplying ECS with an immutable image digest.
 
-The release workflow is intentionally manual in this phase. CI validates the application and container build without AWS credentials. The separate `Release Container Image` workflow requires GitHub Environment approval, uses GitHub OIDC for short-lived AWS credentials, pushes an immutable image tag to ECR, and does not deploy ECS.
+Release is intentionally manual. CI validates the application and container build without AWS credentials. The separate `Release Container Image` workflow requires GitHub Environment approval, uses GitHub OIDC for short-lived AWS credentials, pushes an immutable image tag to ECR, and leaves ECS unchanged.
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ The release workflow is intentionally manual in this phase. CI validates the app
 - An existing account-level GitHub Actions OIDC provider for `https://token.actions.githubusercontent.com`.
 - Permission to create and configure GitHub repository environments and variables.
 
-Do not store AWS access keys, Docker tokens, ECR login output, OIDC tokens, or temporary session credentials in this repository or in GitHub secrets. The release workflow uses OIDC instead of long-lived AWS credentials.
+Keep AWS access keys, Docker tokens, ECR login output, OIDC tokens, and temporary session credentials out of this repository and out of GitHub secrets. The release workflow uses OIDC instead of long-lived AWS credentials.
 
 ## Account-Level GitHub OIDC Provider
 
@@ -91,9 +91,9 @@ Required variables:
 | `AWS_ECR_RELEASE_ROLE_ARN` | `terraform output -raw github_ecr_release_role_arn` |
 | `ECR_REPOSITORY_NAME` | `terraform output -raw ecr_repository_name` |
 
-Do not add `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, or `AWS_SESSION_TOKEN`.
+Use GitHub variables for configuration, not long-lived AWS secrets such as `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, or `AWS_SESSION_TOKEN`.
 
-If `container-release` does not exist, do not run the workflow just to let GitHub create it implicitly. Create and protect the environment first.
+Create and protect `container-release` before running the workflow; relying on GitHub to create it implicitly would skip the intended environment controls.
 
 ## Manual GitHub Actions Release
 
@@ -105,7 +105,7 @@ Use the Actions page:
 4. Start the workflow.
 5. Approve the `container-release` environment job when prompted.
 
-The workflow validates:
+It validates:
 
 - it is running from `refs/heads/main`
 - `GITHUB_SHA` is a full lowercase 40-character SHA
@@ -130,7 +130,7 @@ push git-<sha>
 query and validate the remote digest
 ```
 
-The workflow summary includes the source commit, immutable tag, ECR repository, remote digest, digest URI, scan status, and the note that ECS was not updated.
+The summary includes the source commit, immutable tag, ECR repository, remote digest, digest URI, scan status, and a reminder that ECS was not updated.
 
 IAM action mapping:
 
@@ -142,7 +142,7 @@ IAM action mapping:
 | Docker manifest push | `ecr:PutImage` |
 | Duplicate tag check and remote digest lookup | `ecr:DescribeImages` |
 
-The workflow does not run `aws ecr batch-get-image`, pull a remote manifest, or retag a remote manifest, so `ecr:BatchGetImage` is intentionally not granted.
+Because the workflow does not run `aws ecr batch-get-image`, pull a remote manifest, or retag a remote manifest, `ecr:BatchGetImage` is intentionally not granted.
 
 ## Duplicate Releases
 
@@ -156,7 +156,7 @@ After a successful release, copy the digest URI from the workflow summary:
 <repository-url>@sha256:<64-lowercase-hex-digest>
 ```
 
-Use that value as `app_image_uri` for a later, separate Terraform deployment. Publishing the image is not an ECS deployment. Do not treat the release workflow as evidence that ECS task definition updates, service rollout, alarms, rollback, or runtime behavior have been live-validated.
+Use that value as `app_image_uri` for a later, separate Terraform deployment. Image publication is not an ECS deployment and is not evidence that task definition updates, service rollout, alarms, rollback, or runtime behavior have been live-validated.
 
 Common OIDC failures:
 
@@ -225,11 +225,11 @@ $GitSha = git rev-parse HEAD
 $ImageTag = "git-$GitSha"
 ```
 
-Do not use a short SHA for the ECR image tag.
+Use the full SHA, not a short SHA, for the ECR image tag.
 
 ## ECR Login
 
-Use `aws ecr get-login-password` and pipe the token directly to Docker. Do not print or store the token.
+Use `aws ecr get-login-password` and pipe the token directly to Docker so the token is not printed or stored.
 
 Bash:
 
@@ -296,7 +296,7 @@ Use the Trivy fields to separate likely sources:
 - Runtime npm dependencies appear as library findings from the installed production dependency tree.
 - Dev dependencies should not be treated as runtime container findings unless they are present in the final image.
 
-The current CI gate fails only on fixable CRITICAL vulnerabilities. HIGH findings and unfixed CRITICAL findings still require review before release, but they do not block this initial gate automatically. Do not ignore vulnerabilities only to make CI pass. Any exception should have a clear reason, narrow package or vulnerability scope, an owner, an expiration date, and a tracking issue or ticket. Prefer fixing the base image, OS package, or runtime dependency when a low-risk fix is available.
+The current CI gate fails only on fixable CRITICAL vulnerabilities. HIGH findings and unfixed CRITICAL findings still require review before release, but they do not block this initial gate automatically. Vulnerabilities should not be ignored only to make CI pass. Any exception should have a clear reason, narrow package or vulnerability scope, an owner, an expiration date, and a tracking issue or ticket. Prefer fixing the base image, OS package, or runtime dependency when a low-risk fix is available.
 
 ## Push
 
@@ -371,7 +371,7 @@ terraform plan
 terraform apply
 ```
 
-Do not use tags such as `:latest` or `:git-<sha>` for `app_image_uri`. A digest-pinned image reference makes the ECS task definition resolve to the exact image that was reviewed and pushed.
+Use a digest-pinned image reference for `app_image_uri`, not tags such as `:latest` or `:git-<sha>`. This makes the ECS task definition resolve to the exact image that was reviewed and pushed.
 
 ## Autoscaling Verification
 
@@ -406,7 +406,7 @@ Either CPU or memory target tracking can request scale-out. Scale-in is conserva
 
 ## Controlled Scale-Out Validation
 
-Do not use production traffic to validate autoscaling. Use a short, controlled test window in a sandbox account:
+Validate autoscaling in a short, controlled sandbox window rather than with production traffic:
 
 - record current desired, running, and pending task counts
 - generate CPU or memory pressure against the test service for a short duration
