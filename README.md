@@ -1,4 +1,4 @@
-# AWS Containerized Web App
+# ECS Fargate Container Delivery
 
 [![CI](https://github.com/hongzz0618/aws-containerized-web-app/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/hongzz0618/aws-containerized-web-app/actions/workflows/ci.yml)
 
