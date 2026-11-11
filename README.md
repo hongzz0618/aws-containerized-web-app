@@ -30,7 +30,7 @@ The evidence applies to that commit. Live tests of autoscaling scale-out and sca
 
 1. **CI validation.** CI tests the app and Terraform contracts. It builds the final image once and reuses it for the smoke test, CycloneDX SBOM, and vulnerability scan. The Trivy gate blocks only fixable CRITICAL findings. HIGH and unfixed CRITICAL findings stay visible in the report. CI runs without AWS credentials and stops before ECR publication or ECS deployment.
 2. **Image publication.** The manual release workflow checks that it runs from `main` and requires confirmation of the full commit SHA. It builds, smoke-tests, and scans the release image, then uses GitHub OIDC and an optional ECR release role to publish `git-<full-commit-sha>` and record the digest. The release job uses the `container-release` environment. Required reviewer enforcement depends on that environment's settings and GitHub plan support.
-3. **ECS deployment.** A mutable tag such as `latest` can point to a different image over time. This ECR repository prevents tag overwrites, and a digest identifies the exact image artifact by content. Publishing changes ECR only. A separate Terraform deployment sets `app_image_uri` to `<repository-url>@sha256:<digest>` and updates the ECS task definition and service.
+3. **ECS deployment.** A mutable tag such as `latest` can point to a different image over time. This ECR repository prevents tag overwrites, and a digest identifies the exact image artifact by content. Publishing changes ECR only. A separate Terraform deployment sets `app_image_uri` to `<repository-url>@sha256:<64-lowercase-hex-digest>` and updates the ECS task definition and service.
 
 ## Runtime design
 
