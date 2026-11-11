@@ -151,7 +151,7 @@ Terraform state verification then reported:
 remaining_state_entries = 0
 ```
 
-A subsequent account-level AWS cleanup audit found no remaining active resources associated with this Container project across the enabled AWS Regions.
+The screenshot below records the Terraform destroy result and zero remaining state entries for this deployment. A separate account-level audit reportedly found no remaining active project resources across the enabled AWS Regions. The repository retains no output from that separate audit.
 
 ![Terraform destroy complete](evidence/09-terraform-destroy-complete.png)
 
