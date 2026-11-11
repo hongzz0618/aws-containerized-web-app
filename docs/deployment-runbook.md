@@ -2,16 +2,17 @@
 
 This runbook describes the controlled manual path for publishing the CI-validated application image to the Terraform-managed private ECR repository and then supplying ECS with an immutable image digest.
 
-Release is intentionally manual. CI validates the application and container build without AWS credentials. The separate `Release Container Image` workflow requires GitHub Environment approval, uses GitHub OIDC for short-lived AWS credentials, pushes an immutable image tag to ECR, and leaves ECS unchanged.
+Release is intentionally manual. CI validates the application and container build without AWS credentials. The separate `Release Container Image` workflow uses the `container-release` GitHub Environment and GitHub OIDC for short-lived AWS credentials, pushes an immutable image tag to ECR, and leaves ECS unchanged. Required reviewer approval depends on the environment settings and GitHub plan support.
 
 ## Prerequisites
 
-- Terraform installed.
+- Terraform 1.7 or later. Run Terraform commands from the repository root with AWS credentials for the intended deployment account.
 - Current Git commit available locally.
-- Permissions to create and manage this repository's VPC, ALB, ECS, IAM, CloudWatch Logs, and ECR resources.
-- A selected AWS region that matches `var.aws_region`.
-- An existing account-level GitHub Actions OIDC provider for `https://token.actions.githubusercontent.com`.
-- Permission to create and configure GitHub repository environments and variables.
+- Permissions to manage this stack's VPC, ALB, ECS, Application Auto Scaling, IAM, CloudWatch, and ECR resources.
+- Set `aws_region` for the deployment, for example in a local `terraform.tfvars` based on [the example](../terraform.tfvars.example). Use that same region for GitHub release variables and AWS CLI commands.
+- Keep saved Terraform plans out of version control. They can contain sensitive values.
+- For GitHub Actions publication, an existing account-level GitHub Actions OIDC provider for `https://token.actions.githubusercontent.com`.
+- For GitHub Actions publication, permission to create and configure GitHub repository environments and variables.
 
 Keep AWS access keys, Docker tokens, ECR login output, OIDC tokens, and temporary session credentials out of this repository and out of GitHub secrets. The release workflow uses OIDC instead of long-lived AWS credentials.
 
@@ -51,11 +52,11 @@ aud = sts.amazonaws.com
 sub = repo:hongzz0618/aws-containerized-web-app:environment:container-release
 ```
 
-The subject uses the GitHub Environment form. Do not expect the same OIDC `sub` value to include a branch name. Branch safety is enforced by the workflow rejecting non-`main` refs and by the GitHub Environment deployment branch rule described below.
+The subject uses the GitHub Environment form. Do not expect the same OIDC `sub` value to include a branch name. The workflow rejects non-`main` refs. Configure the GitHub Environment to allow only `main` as an additional branch restriction.
 
 The IAM role uses AWS's minimum role maximum session duration of 3600 seconds. The release workflow requests a shorter 1800-second OIDC session for each run.
 
-After applying Terraform in a controlled change window, read the values needed by GitHub:
+For a first release, follow [Repository Bootstrap](#repository-bootstrap) to provision ECR and the enabled release role and policy. Then read the values needed by GitHub:
 
 ```bash
 terraform output -raw github_ecr_release_role_arn
@@ -76,7 +77,7 @@ container-release
 Configure it before running the workflow:
 
 - Deployment branches: allow only `main`.
-- Required reviewers: enable if the current GitHub plan supports it.
+- Required reviewers: enable if the repository visibility and GitHub plan support it. Check the actual environment settings before relying on an approval gate. Without the rule, GitHub does not wait for reviewer approval.
 - Solo repositories: verify the plan and environment settings allow the intended reviewer to approve the run.
 - Prevent self-review: leave disabled unless another reviewer is available. If enabled, the workflow actor cannot approve their own run.
 - Admin bypass: disable or restrict it according to how tightly this repository should enforce approvals.
@@ -101,9 +102,9 @@ Use the Actions page:
 
 1. Select `Release Container Image`.
 2. Choose branch `main`.
-3. Enter the full 40-character commit SHA from `main` as `confirm_sha`.
+3. Enter the full 40-character commit SHA at the tip of `main` as `confirm_sha`. It must match the `GITHUB_SHA` selected by GitHub at dispatch. If `main` advances before dispatch, confirm the new SHA before retrying.
 4. Start the workflow.
-5. Approve the `container-release` environment job when prompted.
+5. If required reviewers are configured, have an eligible reviewer approve the `container-release` environment job when prompted.
 
 It validates:
 
@@ -158,32 +159,41 @@ After a successful release, copy the digest URI from the workflow summary:
 
 Use that value as `app_image_uri` for a later, separate Terraform deployment. Image publication is not an ECS deployment and is not evidence that task definition updates, service rollout, alarms, rollback, or runtime behavior have been live-validated.
 
-Common OIDC failures:
+Common release failures:
 
 - The AWS OIDC provider ARN does not point to `token.actions.githubusercontent.com`.
 - The GitHub Environment name differs from `container-release`.
 - The trust policy expects a branch subject instead of `repo:<owner>/<repo>:environment:container-release`.
 - The workflow was run from a non-`main` branch.
-- The GitHub Environment lacks the `main`-only deployment branch rule.
 - Required GitHub variables are missing or use the wrong account, region, repository, or role ARN.
+
+The environment deployment branch rule controls which refs can deploy to the environment. A missing rule weakens branch protection but does not itself cause OIDC authentication to fail.
 
 ## Repository Bootstrap
 
-ECR must exist before the first application image can be pushed. A full ECS deployment also needs an image that already exists. Use a one-time targeted apply only to create the repository:
+ECR must exist before the first push, and ECS needs a published image to start tasks. Use a one-time targeted apply to provision the publication prerequisites without creating the ECS service.
 
-```bash
-terraform init
-terraform plan -target=module.ecr
-terraform apply -target=module.ecr
-```
-
-The targeted apply is only for the initial repository bootstrap. It is not the normal long-term Terraform workflow. After the image digest is available, use a normal `terraform plan` and `terraform apply` to reconcile the full configuration.
-
-`app_image_uri` remains a required variable. If Terraform asks for it during bootstrap, provide a syntactically valid placeholder that is not used by the targeted ECR apply, for example:
+`app_image_uri` is required even for the targeted plan. Set a syntactically valid placeholder in your local Terraform inputs for bootstrap:
 
 ```hcl
 app_image_uri = "000000000000.dkr.ecr.eu-west-1.amazonaws.com/example-app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
+
+Run `terraform init`, then choose one bootstrap path. These Terraform commands work in Bash and PowerShell.
+
+For local publication, target the ECR module:
+
+```bash
+terraform plan -target=module.ecr -out=.terraform/bootstrap.tfplan
+```
+
+For GitHub Actions publication, set the [release role inputs](#terraform-release-role-configuration) before planning. Target both ECR and the inline release policy. The policy depends on the release role and uses the ECR repository ARN, so Terraform includes the role and its trust policy dependencies:
+
+```bash
+terraform plan -target=module.ecr -target=aws_iam_role_policy.github_ecr_release -out=.terraform/bootstrap.tfplan
+```
+
+Review the plan before running `terraform apply .terraform/bootstrap.tfplan`. For the GitHub path, confirm it includes the enabled release role and inline policy. Neither path should plan ECS resources. After the image is published, replace the placeholder with the verified digest URI and run the normal, untargeted plan and apply under [Full Terraform Deployment](#full-terraform-deployment).
 
 Read the repository URL after bootstrap:
 
@@ -205,7 +215,8 @@ Fallback prerequisites:
 
 - AWS CLI authenticated for the selected account and region.
 - Docker daemon running locally.
-- Current Git commit available locally.
+- A clean checkout of the intended source commit. Confirm `git status --short` is empty and `git rev-parse HEAD` matches the commit you intend to publish.
+- Node.js 24, Bash, and Trivy for the existing smoke test and scan script. Run the scan from a Bash environment with an LF checkout and access to the same Docker image.
 
 ## Image Tag
 
@@ -229,7 +240,7 @@ Use the full SHA, not a short SHA, for the ECR image tag.
 
 ## ECR Login
 
-Use `aws ecr get-login-password` and pipe the token directly to Docker so the token is not printed or stored.
+Pipe `aws ecr get-login-password` to Docker with `--password-stdin` to keep the token out of the command line. Docker may still save it through a credential helper or in `config.json`. Set the region below to the same value as Terraform’s `aws_region`.
 
 Bash:
 
@@ -249,13 +260,13 @@ aws ecr get-login-password --region $AwsRegion |
 
 ## Build
 
-Use the same Dockerfile and build context validated by CI.
+Use the same Dockerfile and build context as CI. Build for `linux/amd64` to match the ECS task definition’s `X86_64` runtime platform.
 
 Bash:
 
 ```bash
 cd app
-docker build -t "aws-containerized-web-app:${IMAGE_TAG}" .
+docker build --platform linux/amd64 -t "aws-containerized-web-app:${IMAGE_TAG}" .
 cd ..
 ```
 
@@ -263,9 +274,29 @@ PowerShell:
 
 ```powershell
 Set-Location app
-docker build -t "aws-containerized-web-app:$ImageTag" .
+docker build --platform linux/amd64 -t "aws-containerized-web-app:$ImageTag" .
 Set-Location ..
 ```
+
+CI reports cover the image built in CI. A local rebuild produces a separate artifact, so smoke-test and scan the exact local image before pushing it. From the repository root in Bash:
+
+```bash
+CONTAINER_SMOKE_IMAGE="aws-containerized-web-app:${IMAGE_TAG}" \
+  CONTAINER_SMOKE_SKIP_BUILD=true npm --prefix app run test:container
+bash scripts/scan-container-image.sh "aws-containerized-web-app:${IMAGE_TAG}"
+```
+
+In PowerShell:
+
+```powershell
+$env:CONTAINER_SMOKE_IMAGE = "aws-containerized-web-app:$ImageTag"
+$env:CONTAINER_SMOKE_SKIP_BUILD = "true"
+npm --prefix app run test:container
+Remove-Item Env:CONTAINER_SMOKE_IMAGE, Env:CONTAINER_SMOKE_SKIP_BUILD
+bash scripts/scan-container-image.sh "aws-containerized-web-app:$ImageTag"
+```
+
+Continue only after both checks succeed and you have reviewed the local reports. Push the tested image without rebuilding it.
 
 ## CI Container Security Reports
 
@@ -316,7 +347,7 @@ docker tag "aws-containerized-web-app:$ImageTag" "$EcrRepositoryUrl`:$ImageTag"
 docker push "$EcrRepositoryUrl`:$ImageTag"
 ```
 
-The ECR repository uses immutable tags. Pushing the same `git-<full-sha>` tag again should fail instead of replacing the existing image.
+The ECR repository uses immutable tags. Pushing the same `git-<full-sha>` tag again should fail instead of replacing the existing image. If you logged in temporarily, run `docker logout <ecr-registry-host>` after the push. Use the hostname from the login step, without the repository name.
 
 ## Retrieve The Digest
 
@@ -375,18 +406,21 @@ Use a digest-pinned image reference for `app_image_uri`, not tags such as `:late
 
 ## Autoscaling Verification
 
-After a controlled deployment, verify the ECS service scaling configuration before running any load test:
+After a controlled deployment, verify the ECS service scaling configuration before running any load test. Set `AWS_REGION` to your Terraform `aws_region` before running these Bash commands:
 
 ```bash
 aws application-autoscaling describe-scalable-targets \
+  --region "$AWS_REGION" \
   --service-namespace ecs \
   --resource-ids "service/<cluster-name>/<service-name>"
 
 aws application-autoscaling describe-scaling-policies \
+  --region "$AWS_REGION" \
   --service-namespace ecs \
   --resource-id "service/<cluster-name>/<service-name>"
 
 aws ecs describe-services \
+  --region "$AWS_REGION" \
   --cluster "<cluster-name>" \
   --services "<service-name>" \
   --query 'services[0].{desired:desiredCount,running:runningCount,pending:pendingCount,events:events[0:5]}'
@@ -448,7 +482,7 @@ Alarms only send notifications when `alarm_action_arns` or `ok_action_arns` are 
 - The existing NAT gateway can remain the main fixed cost while the stack is deployed.
 - CloudWatch alarms have low standing cost, but they are not free.
 
-## Verification And Cleanup Preview
+## Verification And Cleanup
 
 Before applying the full configuration, check:
 
@@ -457,4 +491,8 @@ Before applying the full configuration, check:
 - The digest came from `aws ecr describe-images` for the exact tag.
 - The selected AWS region matches the Terraform provider region.
 
-The ECR repository is configured with `force_delete = false`. Terraform cannot destroy a non-empty repository while that setting remains false. Images must be intentionally removed before complete cleanup, which protects stored images from accidental deletion during stack teardown.
+For cleanup, use the same Terraform workspace, AWS account, region, and input values as the deployment.
+
+1. Run `terraform init` if needed, then save and review a destroy plan with `terraform plan -destroy -out=.terraform/cleanup.tfplan`.
+2. Confirm that no workload outside the stack being removed needs the images and preserve any images you need to keep. Empty only the intended ECR repository. Keep `force_delete = false`, which blocks Terraform from destroying a non-empty repository.
+3. Apply the reviewed destroy plan with `terraform apply .terraform/cleanup.tfplan`, then check `terraform state list`. An empty list confirms no entries remain in that Terraform state. Check the affected AWS account and regions separately if you need to verify residual resources.
